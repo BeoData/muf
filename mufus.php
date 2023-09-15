@@ -43,7 +43,7 @@ function mm2_MuFuSliPrintFromPostId($aPostId)
 	$lOptions['mufusli_visibility_mode'] = get_field('mufusli_visibility_mode', $aPostId);
 	$lOptions['mufusli_visibility_grouprights'] = get_field('mufusli_visibility_grouprights', $aPostId);
 	$lOptions['mufusli_visibility_logintext'] = get_field('mufusli_visibility_logintext', $aPostId);
-	
+var_dump($lElements);
 	// Print the MuFuSli
 	mm2_MuFuSliPrint($lOptions, $lElements);
 }
@@ -155,7 +155,7 @@ function mm2_MuFuSliPrint($aOptions, $aElements) {
 								
 								// Get Todays Date
 								$lDateToday = date('Ymd');
-                                var_dump($lDateToday);
+
 								foreach ($aElements as $lElement)
 								{
 									$lElementsCount++;
@@ -163,11 +163,18 @@ function mm2_MuFuSliPrint($aOptions, $aElements) {
 									$lElementCss = '';
 									$lElementType = $lElement['acf_fc_layout'];
 
+                                   var_dump($lElementType);
 
-$mufusli_elements_taxonomy = $lElement['mufusli_elements_article_end_date'];
-
-var_dump($mufusli_elements_taxonomy);
 									switch ($lElementType) {
+
+                                            //mufusli_elements_taxonomy
+                                        case 'mufusli_elements_taxonomy':
+                                            $taxonomy = $lElement['taxonomy'];
+                                            $taxonomy_number = $lElement['number'];
+
+                                           // var_dump($taxonomy);
+                                            break;
+
 										// mufusli_elements_article
 										case 'mufusli_elements_article':
 											// Get End date
@@ -182,7 +189,7 @@ var_dump($mufusli_elements_taxonomy);
 												}
 											}
 											// Get the fields for the article element
-											$lArticleId = $lElement['mufusli_elements_article_id'];
+                                            $lArticleId = $lElement['mufusli_elements_article_id'];
 
 											$lArticle = get_post($lArticleId);
 											$lArticelImageTag = mm2_GetImageCode(get_post_thumbnail_id($lArticle->ID), '270', true);
@@ -767,16 +774,6 @@ var_dump($mufusli_elements_taxonomy);
             <div style="clear: both;"></div>
         </div>
 		<?php
-      //  $lArticleId,$aOptions, $aElements ,14063541
-        $lArticleId = $lElement['mufusli_elements_article_id'];
-       // $lArticle = get_post($lArticleId);
-    //    var_dump($lArticleId);
-        $selectedValue = get_field('field_650164606d6fd','14063541');
-        if ($selectedValue) {
-            var_dump($selectedValue) ;
-        } else {
-            echo 'No value selected.';
-        }
 
 	}
 }
@@ -971,7 +968,7 @@ function PrintMufusliRepeaterFromOptions( string $ChannelCpt )
 		    $lOptions['mufusli_visibility_grouprights'] = $lElement['mufusli_visibility_grouprights'];
 		    $lOptions['mufusli_visibility_logintext'] = $lElement['mufusli_visibility_logintext'];
 
-            $lOptions['mufusli_elements_taxonomy'] = $lElement['mufusli_elements_taxonomy'];
+           // $lOptions['mufusli_elements_taxonomy'] = $lElement['mufusli_elements_taxonomy'];
 
             // Get the elements
 		    $lMufusliElements  =  $lElement['mufusli_elements'];
