@@ -1,983 +1,1628 @@
 <?php
-
-/**
- * assets/functions/mm2_mufusli.php
+/*
  *
- * Generates MuFuSli
- *
- * @category    Template Functions
- * @package     MM2
- * @author      wlautner
- * @version     Release: 0.0.1
- * @since       2019-04-02 (19)
- *
- * changes:
- *      2021-10-29 If User is Editor, reset Security
- *      2021-05-11 Added EndDate for a MuFuSli Element, Check for Date on a DPO Element
- *      2020-04-21 Adding Borlabs Vimeo Cookie check
- *      2020-03-23 Display Headline if no ArticleImage
- *      2020-03-18 Fixed Alternative Image Bug
  *
  */
+// Exit if accessed directly
+if (!defined('ABSPATH'))
+    exit;
 
-$lMufusliCounter = 0;
+class DFP_JSON_USERS {
 
-/**
- * @param $aPostId
- */
-function mm2_MuFuSliPrintFromPostId($aPostId)
-{
-	// Get the mufusli elements
-	$lElements = get_field('mufusli_elements', $aPostId);
-	
-	// Add extra fields to elements
-	$lOptions['mufusli_title'] = get_field('mufusli_title', $aPostId);
-	$lOptions['mufusli_infobox'] = get_field('mufusli_infobox', $aPostId);
-	$lOptions['mufusli_backgroundcolor'] = get_field('mufusli_backgroundcolor', $aPostId);
-	$lOptions['mufusli_layout'] = get_field('mufusli_layout', $aPostId);
-	$lOptions['mufusli_css'] = get_field('mufusli_css', $aPostId);
-	$lOptions['mufusli_detailbutton'] = get_field('mufusli_detailbutton', $aPostId);
-	$lOptions['mufusli_detailbutton_text'] = get_field('mufusli_detailbutton_text', $aPostId);
-	$lOptions['mufusli_detailbutton_link'] = get_field('mufusli_detailbutton_link', $aPostId);
-	$lOptions['mufusli_detailbutton_linktarget'] = get_field('mufusli_detailbutton_linktarget', $aPostId);
-	$lOptions['mufusli_visibility_mode'] = get_field('mufusli_visibility_mode', $aPostId);
-	$lOptions['mufusli_visibility_grouprights'] = get_field('mufusli_visibility_grouprights', $aPostId);
-	$lOptions['mufusli_visibility_logintext'] = get_field('mufusli_visibility_logintext', $aPostId);
-var_dump($lElements);
-	// Print the MuFuSli
-	mm2_MuFuSliPrint($lOptions, $lElements);
-}
+    // Email of User who can Create Users
+    private $adminemail = 'easydocTest@proman.at';
+    // pwd: test
+    // Medmedia is Blog Nr. 1
+    private $blogid = '1';
 
-/**
- * @param $aOptions
- * @param $aElements
- */
-function mm2_MuFuSliPrint($aOptions, $aElements) {
-	// Increase the counter
-	global $lMufusliCounter;
-	$lMufusliCounter++;
+    // Required Fields for creating a User
+    private $required_data = array(
+        'firstname',
+        'surname',
+        'password',
+        'birthday',
+        'email',
+        'country',
+        'salutation',
+        'professional'
+    );
+    // Optional Fields for creating a User
+    private $additional_data = array(
+        'country',
+        'salutation',
+        'professional',
+        'title',
+        'professionalCode',
+        'professionalAddon',
+        'doctorNumber',
+        'newsletters',
+        'clientVersion',
+        'clientName',
+        'plz'
+    );
+    // Available xProfile Fields
+    private $xprofile_fields = array(
+        'birthday' => 'Geb. Datum',
+        'title' => 'Titel',
+        'country' => 'Land',
+        'salutation' => 'Anrede',
+        'professional' => 'Berufsgruppe',
+        'professionalCode' => 'Fachgruppe',
+        'professionalAddon' => 'Zusatzgebiet',
+        'doctorNumber' => 'Arztnummer',
+        'easy_firstname' => 'Vorname',
+        'easy_surname' => 'Nachname',
+        'plz'       => 'PLZ'
+    );
+    private $knews_fields = array(
+        'newsletters' => 'newsletter_id'
+    );
 
-	$lMufusliIsInfoBox = $aOptions['mufusli_infobox'] == '1';
-	
-	if ($aElements || $lMufusliIsInfoBox )
-	{
-		// Get the settings
-		$lMufusliTitle = $aOptions['mufusli_title'];
-		$lBackgroundColor = $aOptions['mufusli_backgroundcolor'];
-		$lBackgroundColorRgba1 = hex2rgba($lBackgroundColor, 0);
-		$lBackgroundColorRgba2 = hex2rgba($lBackgroundColor, 1);
-		
-		$lVisibilityMode = $aOptions['mufusli_visibility_mode'];
-		$lGroupRights = $aOptions['mufusli_visibility_grouprights'];
-		$lLoginText = $aOptions['mufusli_visibility_logintext'];
+    // Roles
+    private $customroles = array(
+        'Arzt' => 'arzt',
+        'Apotheker' => 'apotheker',
+        'Medizinstudent' => 'medizinstudent',
+        'Industrie' => 'industrie',
+        'Medizinische Berufe' => 'medizinische_berufe',
+        'Medizinjournalist' => 'medizinjournalist',
+        'PKA' => 'pka',
+        'Andere' => 'andere',
+        'Pflegeberufe' => 'pflegeberufe'
+    );
 
-		$lMufusliIsInfoBoxContent = $aOptions['mufusli_infobox_content'];
-		
-		// Get the user profession if needed
-		$lProfession = 'none';
-		if ( is_user_logged_in() )
-        {
-			$lMedmediaConfig = new MM_Configs();
-			$lProfileFields = $lMedmediaConfig->get_xProfileFieldsConfig();
-			$lProfession = xprofile_get_field_data($lProfileFields['professional']['id'], get_current_user_id());
+    /**
+     * Register the user-related routes
+     *
+     * @param array $routes Existing routes
+     * @return array Modified routes
+     */
+    public function register_routes($routes) {
+        $user_routes = array(
+            // User endpoints
+            '/v1/user' => array(
+                array(
+                    array(
+                        $this,
+                        'get_current_user'
+                    ),
+                    WP_JSON_Server::READABLE | WP_JSON_Server::HIDDEN_ENDPOINT
+                ),
+                array(
+                    array(
+                        $this,
+                        'create_user'
+                    ),
+                    WP_JSON_Server::EDITABLE | WP_JSON_Server::ACCEPT_JSON | WP_JSON_Server::HIDDEN_ENDPOINT
+                ),
+            ),
 
-			// Check if user is "editor" -> no security
-			if (current_user_can('editor'))
-			{
-				$lVisibilityMode = 'public';
-			}
-		}
-		
-		// Is the mufusli visible, either by security or by info-box mode
-		$lMufusliContentVisible = !$lVisibilityMode || $lVisibilityMode == 'public' || ($lVisibilityMode == 'role' && strpos($lGroupRights, $lProfession) > 0);
-		
-		$lLayoutCss = '';
-		$lLayoutTag = ' columns="4"';
-		$lLayout = $aOptions['mufusli_layout'];
-		if ($lLayout == '2') {
-			$lLayoutCss = ' columns_2';
-			$lLayoutTag = ' columns="2"';
-		}
-		$lCss = $aOptions['mufusli_css'];
-		if ($lCss)
-			$lCss = ' ' . $lCss;
-		?>
-        <style>
-            .wrapper_mufusli .mufusli .carousel .mufusli_<?php echo($lMufusliCounter); ?> .info::after {
-                background: linear-gradient(180deg, <?php echo($lBackgroundColorRgba1); ?> 0%, <?php echo($lBackgroundColorRgba2); ?> 100%);
-            }
-        </style>
-        <div class="wrapper_mufusli<?php echo($lCss . $lLayoutCss); ?>" style="background-color: <?php echo($lBackgroundColor); ?>">
-			<?php
-			if (!empty($lMufusliTitle)) {
-				?>
-                <div class="grid-container">
-                    <h2><?php echo($lMufusliTitle); ?></h2>
-                </div>
-				<?php
-			}
-			if ($lMufusliContentVisible)
-            {
-				// Check if info-box
-				if ($lMufusliIsInfoBox) {
-					?>
-                    <div class="mufusli" mufusliid="<?php echo($lMufusliCounter); ?>"<?php echo($lLayoutTag); ?>>
-                        <div class="grid-container">
-							<?php
-							echo($lMufusliIsInfoBoxContent);
-							
-							// Is there a detail button
-							$lShowDetailsButton = $aOptions['mufusli_detailbutton'] == '1';
-							if ($lShowDetailsButton) {
-								$lDetailButtonText = $aOptions['mufusli_detailbutton_text'] . ' &raquo;';
-								$lDetailButtonLink = $aOptions['mufusli_detailbutton_link'];
-								$lDetailButtonTarget = $aOptions['mufusli_detailbutton_linktarget'];
-								if (!$lDetailButtonTarget)
-									$lDetailButtonTarget = '_self';
-								?>
-                                <p class="more" style="position: inherit; margin-top: 12px;">
-                                    <a href="<?php echo($lDetailButtonLink); ?>" target="<?php echo($lDetailButtonTarget); ?>"><?php echo($lDetailButtonText); ?></a>
-                                </p>
-								<?php
-							}
-							?>
-                        </div>
-                    </div>
-					<?php
-				} else {
-					// Normal MuFusLi :)
-					?>
-                    <div class="mufusli" mufusliid="<?php echo($lMufusliCounter); ?>"<?php echo($lLayoutTag); ?>>
-                        <div class="grid-container">
-                            <div class="carousel">
-								<?php
-								$lElementsCount = 0;
-								
-								// Get Todays Date
-								$lDateToday = date('Ymd');
+            '/v1/updateuser' => array(
+                array(
+                    array(
+                        $this,
+                        'update_user'
+                    ),
+                    WP_JSON_Server::EDITABLE | WP_JSON_Server::ACCEPT_JSON | WP_JSON_Server::HIDDEN_ENDPOINT
+                ),
+            ),
 
-								foreach ($aElements as $lElement)
-								{
-									$lElementsCount++;
-									$lCellCss = 'cell mufusli_' . $lMufusliCounter . ' hidden';
-									$lElementCss = '';
-									$lElementType = $lElement['acf_fc_layout'];
+            '/v1/user/(?P<id>\d+)' => array(
+                array(
+                    array(
+                        $this,
+                        'get_user'
+                    ),
+                    WP_JSON_Server::READABLE | WP_JSON_Server::HIDDEN_ENDPOINT
+                ),
+                array(
+                    array(
+                        $this,
+                        'delete_user'
+                    ),
+                    WP_JSON_Server::DELETABLE | WP_JSON_Server::HIDDEN_ENDPOINT
+                ),
+            ),
 
-                                   var_dump($lElementType);
+            '/v1/setarztnummer' => array(
+                array(
+                    array(
+                        $this,
+                        'set_arztnummer'
+                    ),
+                    WP_JSON_Server::EDITABLE | WP_JSON_Server::ACCEPT_JSON | WP_JSON_Server::HIDDEN_ENDPOINT
+                ),
+            ),
 
-									switch ($lElementType) {
+            '/v1/setpassword' => array(
+                array(
+                    array(
+                        $this,
+                        'set_password'
+                    ),
+                    WP_JSON_Server::READABLE | WP_JSON_Server::HIDDEN_ENDPOINT
+                ),
+            ),
 
-                                            //mufusli_elements_taxonomy
-                                        case 'mufusli_elements_taxonomy':
-                                            $taxonomy = $lElement['taxonomy'];
-                                            $taxonomy_number = $lElement['number'];
+            '/v1/lastfall' => array(
+                array(
+                    array(
+                        $this,
+                        'get_last_fall'
+                    ),
+                    WP_JSON_Server::READABLE | WP_JSON_Server::HIDDEN_ENDPOINT
+                ),
+                array(
+                    array(
+                        $this,
+                        'cu_last_fall'
+                    ),
+                    WP_JSON_Server::EDITABLE | WP_JSON_Server::HIDDEN_ENDPOINT
+                ),
+            ),
 
-                                           // var_dump($taxonomy);
-                                            break;
+            '/v1/getcheckemail/(?P<email>.+)' => array(
+                array(
+                    array(
+                        $this,
+                        'check_email_wp'
+                    ),
+                    WP_JSON_Server::READABLE | WP_JSON_Server::HIDDEN_ENDPOINT
+                ),
+            ),
 
-										// mufusli_elements_article
-										case 'mufusli_elements_article':
-											// Get End date
-											$lEndDate = $lElement['mufusli_elements_article_end_date'];
+            '/v1/checkemail/(?P<email>.+)' => array(
+                array(
+                    array(
+                        $this,
+                        'check_email_address'
+                    ),
+                    WP_JSON_Server::READABLE | WP_JSON_Server::HIDDEN_ENDPOINT
+                ),
+            ),
 
-											if ( $lEndDate && !empty($lEndDate ))
-											{
-												if ( $lEndDate < $lDateToday )
-												{
-													// continue;
-													break;
-												}
-											}
-											// Get the fields for the article element
-                                            $lArticleId = $lElement['mufusli_elements_article_id'];
+            '/v1/subscribenews/(?P<newsId>\d+)' => array(
+                array(
+                    array(
+                        $this,
+                        'subscribe_news'
+                    ),
+                    WP_JSON_Server::READABLE | WP_JSON_Server::HIDDEN_ENDPOINT
+                )
+            ),
 
-											$lArticle = get_post($lArticleId);
-											$lArticelImageTag = mm2_GetImageCode(get_post_thumbnail_id($lArticle->ID), '270', true);
-											
-											// Check if alternate image for this article
-											$lAlternativeArticleImageId = get_field(MM2_ARTICLE_IMAGESQUARE, $lArticle->ID);
-											if ($lAlternativeArticleImageId) {
-												$lArticelImageTag = mm2_GetImageCode($lAlternativeArticleImageId, '270', true);
-											}
-											
-											$lArticelImageLargeTag = '';
-											$lArticleUrl = get_post_permalink($lArticle->ID);
-											
-											// Get the target and if necessary, change the link
-											$lArticleTarget = $lElement['mufusli_elements_article_target'];
-											$lDoLightbox = false;
-											if (!empty($lArticleTarget) && $lArticleTarget == 'lightbox') {
-												$lArticleUrl = "javascript:openDarkbox('darkbox_" . $lArticleId . "')";
-												$lArticelImageLargeTag = mm2_GetImageCode(get_post_thumbnail_id($lArticle->ID), '2048', false);
-												$lArticleTarget = '';
-												$lDoLightbox = true;
-											}
-											
-											// Get the post type
-											$lPostType = get_post_type($lArticle->ID);
-											// Title
-											$lArticleTitle = $lElement['mufusli_elements_article_title'];
-											if (empty($lArticleTitle)) {
-												if ($lPostType == DPO_CPT_BASE_NAME) {
-													$lArticleTitle = get_field('easydoc_titel', $lArticle->ID);
-												} else {
-													$lArticleTitle = $lArticle->post_title;
-												}
-											}
-											
-											// Check if article itself has an alternate subtitle
-											$lArticleInfoTitle = get_field('mm2_infotitle', $lArticle->ID);
-											
-											$lAlternativeArticleInfoTitle = $lElement['mufusli_elements_article_infotitle'];
-											if (!empty($lAlternativeArticleInfoTitle)) {
-												$lArticleInfoTitle = $lAlternativeArticleInfoTitle;
-											}
-											
-											// Info title
-											if (empty($lArticleInfoTitle)) {
-												$lTaxonomyName = '';
-												// Depending on post type, get the taxonomy name
-												switch ($lPostType) {
-													case NEXTDOC_CPT_BASE_NAME:
-														$lTaxonomyName = NEXTDOC_TAX_BASE_NAME;
-														break;
-													case RELATUSMED_CPT_BASE_NAME:
-														$lTaxonomyName = RELATUSMED_TAX_BASE_NAME;
-														break;
-													case RELATUSPHARM_CPT_BASE_NAME:
-														$lTaxonomyName = RELATUSPHARM_TAX_BASE_NAME;
-														break;
-													case CONGRESSXPRESS_CPT_BASE_NAME:
-														$lTaxonomyName = CONGRESSXPRESS_TAX_BASE_NAME;
-														break;
-													case IMFOKUSARTICLE_CPT_BASE_NAME:
-														$lTaxonomyName = IMFOKUSARTICLE_TAX_BASE_NAME;
-														break;
-													default:
-														$lTaxonomyName = '';
-												}
-												
-												if (!empty($lTaxonomyName)) {
-													$lArticleInfoTitle = mm2_helpers_GetArticleTermsAsList($lArticle->ID, $lTaxonomyName);
-												} else {
-													$lArticleInfoTitle = '&nbsp;';
-													
-													// Check if DFP article
-													if ($lPostType == DPO_CPT_BASE_NAME) {
-														$lArticlePoints = get_field('easydoc_points', $lArticle->ID);
-														if ($lArticlePoints > 1)
-															$lArticlePointsExtension = 'e';
-														$lArticleInfoTitle = $lArticlePoints . ' DFP-Punkt' . $lArticlePointsExtension;
-														$lArticleGroup = get_field('easydoc_zielgruppe', $lArticle->ID);
-														if ($lArticleGroup != 'Arzt')
-															$lArticleInfoTitle = $lArticlePoints . ' Punkt' . $lArticlePointsExtension . ' für ' . $lArticleGroup;
-													}
-												}
-											}
+            '/v1/unsubscribenews/(?P<newsId>\d+)' => array(
+                array(
+                    array(
+                        $this,
+                        'unsubscribe_news'
+                    ),
+                    WP_JSON_Server::READABLE | WP_JSON_Server::HIDDEN_ENDPOINT
+                )
+            )
+        );
+        return array_merge($routes, $user_routes);
+    } //
 
-											// Alternative Image
-											$lAlternativeArticleImageId = $lElement['mufusli_elements_article_image_id'];
-											echo("<!-- IMGID: " . $lAlternativeArticleImageId . ' -->');
-											if ($lAlternativeArticleImageId && !empty($lAlternativeArticleImageId)) {
-												$lArticelImageTag = mm2_GetImageCode($lAlternativeArticleImageId, '270', true);
-											}
+    /**
+     * @param $id           The user id
+     * @param $email        The email address of the user
+     * @param $password     The new password
+     */
+    public function set_password($id, $email, $password) {
+        global $wpdb;
 
-											// Subtitle
-											$lArticleSubTitle = $lElement['mufusli_elements_article_subtitle'];
-											if (empty($lArticleSubTitle))
-                                            {
-												// Check if DFP article
-												if ($lPostType == DPO_CPT_BASE_NAME)
-												{
-													$lArticleDate = DateTime::createFromFormat("Ymd", get_field('easydoc_validUntil', $lArticle->ID));
-													if ($lArticleDate)
-													{
-														// Continue if Course is not Active anymore
-														if ( $lArticleDate->format('Ymd') < $lDateToday )
-													{
-															// continue;
-															break;
-														}
-														$lArticleSubTitle = 'Gültig bis ' . $lArticleDate->format('d.m.Y');
-													}
-												} else {
-													$lArticleSubTitle = date('j.n.Y', strtotime($lArticle->post_date));
-												}
-											}
+        // Check if user id and email match
+        if ($email == "")
+            return "no email";
 
-											// DPO article
-											if ($lPostType == DPO_CPT_BASE_NAME) {
-												$lArticelImageTag = get_field('easydoc_startimage', $lArticle->ID);
-												if ($lArticelImageTag != false) {
-													$lArticelImageTag = '<img src="' . $lArticelImageTag['url'] . '">';
-												}
-												
-												$lArticleDfpIcon = get_field('easydoc_icon', $lArticle->ID);
-												if ($lArticleDfpIcon)
-													$lArticleDfpIcon = '<img src="' . $lArticleDfpIcon['url'] . '">';
-											}
+        $user = get_user_by('email', $email);
+        if ($user->ID != $id)
+            return "no match";
 
-											// Article Icon
-											$lArticleIconTag = '';
-											$lArticleIcon = get_field('mm2_article_icon', $lArticle->ID);
-											if ($lArticleIcon) {
-												$lArticleIconTag = '<div class="article_icon">' . $lArticleIcon . '</div>';
-											}
-											
-											// Check if paid activation
-											$lArticleIsPaidactivationBackgroundColor = $lBackgroundColor;
-											$lArticleIsPaidactivationTextColor = '#FFFFFF';
-											$lArticleIsPaidactivation = $lElement['mufusli_elements_article_paidactivation'] == '1';
-											if ($lArticleIsPaidactivation) {
-												$lElementCss = ' nohover paidactivation mufusli_' . $lMufusliCounter . '_' . $lElementsCount;
-												$lArticleIsPaidactivationBackgroundColor = $lElement['mufusli_elements_article_paidactivation_backgroundcolor'] ?? $lArticleIsPaidactivationBackgroundColor;
-												$lArticleIsPaidactivationTextColor = $lElement['mufusli_elements_article_paidactivation_textcolor'] ?? $lArticleIsPaidactivationTextColor;
-												
-												$lBackgroundColorRgba1 = hex2rgba($lArticleIsPaidactivationBackgroundColor, 0);
-												$lBackgroundColorRgba2 = hex2rgba($lArticleIsPaidactivationBackgroundColor, 1);
-											}
+        // Set the password
+        $lPassword = wp_hash_password($password); //  md5( $password );
+        $wpdb->update($wpdb->users, array('user_pass' => $lPassword), array('ID' => $id));
+        wp_cache_delete($id, 'users');
 
-											// Teasertext
-											$lArticleTeaserText = $lElement['mufusli_elements_article_teaser'];
-											if (empty($lArticleTeaserText)) {
-												// Get more Excerpt text if no image
-												if (empty($lArticelImageTag)) {
-													$lArticleTeaserText = mm2_helpers_GetArticleTeaser($lArticle, 'teaser-more');
-												} else {
-													$lArticleTeaserText = mm2_helpers_GetArticleTeaser($lArticle);
-												}
-											}
-											?>
-                                            <a href="<?php echo($lArticleUrl); ?>" target="<?php echo($lArticleTarget) ?>">
-                                                <div class="<?php echo($lCellCss); ?>">
-                                                    <div class="article<?php echo($lElementCss); ?>">
-														<?php
-														
-														//
-														// ArticleImage
-														//
-														$_boolean_headline = false;
-														if (!empty($lArticelImageTag)) {
-															//
-															$_boolean_headline = true;
-															?>
-                                                            <div class="img">
-															<?php
-															echo($lArticelImageTag);
-															if (!empty($lArticleDfpIcon)) {
-																?>
-                                                                <div class="dfp_icon">
-																	<?php echo($lArticleDfpIcon); ?>
-                                                                </div>
-																<?php
-															}
-															
-															if (!empty($lArticleIconTag)) {
-																echo($lArticleIconTag);
-															}
-															?>
-                                                            </div><?php // .img
-															?>
-															<?php
-														} // endif has ArticleImage
-														
-														?>
-                                                        <div class="info <?php if (!$_boolean_headline) {
-															echo('teaser-more');
-														} ?>" <?php if ($lArticleIsPaidactivation)
-															echo(' style="color: ' . $lArticleIsPaidactivationTextColor . '"'); ?>>
-                                                            <span class="infotitle"><?php echo($lArticleInfoTitle); ?></span>
-															<?php
-															echo mm2_helpers_headline($lArticleTitle, 'h3');
-															?>
-                                                            <span class="subtitle"><?php echo($lArticleSubTitle); ?></span>
-                                                            <p><?php echo($lArticleTeaserText); ?></p>
-                                                        </div>
-														<?php
-														if ($lArticleIsPaidactivation) {
-															?>
-                                                            <div class="paidactivation_hint" style="background-color: <?php echo($lArticleIsPaidactivationBackgroundColor); ?>">
-                                                                <span style="color: <?php echo($lArticleIsPaidactivationTextColor); ?>">Entgeltliche Einschaltung</span>
-                                                            </div>
-                                                            <style>
-                                                                .wrapper_mufusli .mufusli .carousel .mufusli_<?php echo($lMufusliCounter); ?>_<?php echo($lElementsCount); ?> .info::after {
-                                                                    background: linear-gradient(180deg, <?php echo($lBackgroundColorRgba1); ?> 0%, <?php echo($lBackgroundColorRgba2); ?> 100%);
-                                                                }
-                                                            </style>
-															<?php
-														}
-														?>
-                                                    </div>
-                                                </div>
-                                            </a>
-											<?php
-
-											// Is there a darkbox needed?
-											if ($lDoLightbox) {
-												mm2_DarkboxPrint($lArticleId, $lArticelImageLargeTag, $lArticleTitle, wpautop($lArticle->post_content), 'img');
-											}
-											// mufusli_elements_article
-											break;
-										// mufusli_elements_image
-										case 'mufusli_elements_image':
-											
-											// Get End date
-											$lEndDate = $lElement['mufusli_elements_image_end_date'];
-											if ( $lEndDate && !empty($lEndDate ))
-											{
-												if ( $lEndDate < $lDateToday )
-												{
-													// continue ;
-													break;
-												}
-											}
-											// Get the fields for the image element
-											$lImageId = $lElement['mufusli_elements_image_id'];
-											$lImageTag = mm2_GetImageCode($lImageId, '270', true);
-											
-											$lImageFillType = $lElement['mufusli_elements_image_filltype'];
-											$lImageClass = 'image';
-											if ($lImageFillType == 'full')
-												$lImageClass .= ' ' . $lImageFillType;
-											
-											$lImageTitle = $lElement['mufusli_elements_image_title'];
-											$lImageInfoTitle = $lElement['mufusli_elements_image_infotitle'] ?? '';
-											$lImageSubTitle = $lElement['mufusli_elements_image_subtitle'] ?? '';
-											$lImageContent = '<p>' . $lElement['mufusli_elements_image_content'] . '</p>';
-											$lImageUseExtendedContent = $lElement['mufusli_elements_image_useextendedcontent'];
-											if ($lImageUseExtendedContent == true)
-												$lImageContent = $lElement['mufusli_elements_image_content_extended'];
-											
-											$lInfoClass = 'info';
-											$lImageContentAlignment = $lElement['mufusli_elements_image_alignment'];
-											if (empty($lImageContentAlignment))
-												$lImageContentAlignment = 'top';
-											$lInfoClass .= ' ' . $lImageContentAlignment;
-											
-											
-											$lImageUrl = $lElement['mufusli_elements_image_link'];
-											$lImageTarget = $lElement['mufusli_elements_image_linktarget'];
-											
-											// Check if paid activation
-											$lArticleIsPaidactivationBackgroundColor = $lBackgroundColor;
-											$lArticleIsPaidactivationTextColor = '#FFFFFF';
-											$lArticleIsPaidactivation = $lElement['mufusli_elements_image_paidactivation'] == '1';
-											if ($lArticleIsPaidactivation) {
-												$lElementCss = ' nohover paidactivation mufusli_' . $lMufusliCounter . '_' . $lElementsCount;
-												$lArticleIsPaidactivationBackgroundColor = $lElement['mufusli_elements_image_paidactivation_backgroundcolor'] ?? $lArticleIsPaidactivationBackgroundColor;
-												$lArticleIsPaidactivationTextColor = $lElement['mufusli_elements_image_paidactivation_textcolor'] ?? $lArticleIsPaidactivationTextColor;
-												
-												$lBackgroundColorRgba1 = hex2rgba($lArticleIsPaidactivationBackgroundColor, 0);
-												$lBackgroundColorRgba2 = hex2rgba($lArticleIsPaidactivationBackgroundColor, 1);
-											}
-											?>
-                                            <a href="<?php echo($lImageUrl); ?>" target="<?php echo($lImageTarget); ?>">
-                                                <div class="<?php echo($lCellCss); ?>">
-                                                    <div class="<?php echo($lImageClass . $lElementCss) ?>">
-                                                        <div class="img">
-															<?php echo($lImageTag); ?>
-                                                        </div>
-                                                        <div class="<?php echo($lInfoClass); ?>">
-                                                            <span class="infotitle"><?php echo($lImageInfoTitle); ?></span>
-                                                            <h3><?php echo($lImageTitle); ?></h3>
-                                                            <span class="subtitle"><?php echo($lImageSubTitle); ?></span>
-															<?php echo($lImageContent); ?>
-                                                        </div>
-                                                    </div>
-													<?php
-													if ($lArticleIsPaidactivation) {
-														?>
-                                                        <div class="paidactivation_hint" style="background-color: <?php echo($lArticleIsPaidactivationBackgroundColor); ?>">
-                                                            <span style="color: <?php echo($lArticleIsPaidactivationTextColor); ?>">Entgeltliche Einschaltung</span>
-                                                        </div>
-                                                        <style>
-                                                            .wrapper_mufusli .mufusli .carousel .mufusli_<?php echo($lMufusliCounter); ?>_<?php echo($lElementsCount); ?> .info::after {
-                                                                background: linear-gradient(180deg, <?php echo($lBackgroundColorRgba1); ?> 0%, <?php echo($lBackgroundColorRgba2); ?> 100%);
-                                                            }
-                                                        </style>
-														<?php
-													}
-													?>
-                                                </div>
-                                            </a>
-											<?php
-											break;
-										//mufusli_elements_text
-										case 'mufusli_elements_text':
-											// Get End date
-											$lEndDate = $lElement['mufusli_elements_text_end_date'];
-											if ( $lEndDate && !empty($lEndDate ))
-											{
-												if ( $lEndDate < $lDateToday )
-												{
-													// continue ;
-                                                    break;
-												}
-											}
-											
-											// Get the fields for the article element
-											$lTextTitle = $lElement['mufusli_elements_text_title'];
-											
-											$lTextContent = '<p>' . $lElement['mufusli_elements_text_content'] . '</p>';
-											if ($lElement['mufusli_elements_text_extendedcontent'] == true)
-												$lTextContent = $lElement['mufusli_elements_text_content_extended'];
-											
-											// Check if paid activation
-											$lArticleIsPaidactivationBackgroundColor = $lBackgroundColor;
-											$lArticleIsPaidactivationTextColor = '#FFFFFF';
-											$lArticleIsPaidactivation = $lElement['mufusli_elements_text_paidactivation'] == '1';
-											if ($lArticleIsPaidactivation) {
-												$lElementCss = ' nohover paidactivation mufusli_' . $lMufusliCounter . '_' . $lElementsCount;
-												$lArticleIsPaidactivationBackgroundColor = $lElement['mufusli_elements_text_paidactivation_backgroundcolor'] ?? $lArticleIsPaidactivationBackgroundColor;
-												$lArticleIsPaidactivationTextColor = $lElement['mufusli_elements_text_paidactivation_textcolor'] ?? $lArticleIsPaidactivationTextColor;
-												
-												$lBackgroundColorRgba1 = hex2rgba($lArticleIsPaidactivationBackgroundColor, 0);
-												$lBackgroundColorRgba2 = hex2rgba($lArticleIsPaidactivationBackgroundColor, 1);
-											}
-												?>
-                                            <a href="#">
-                                                <div class="<?php echo($lCellCss); ?>">
-                                                    <div class="text<?php echo($lElementCss); ?>">
-                                                        <div class="info"<?php if ($lArticleIsPaidactivation)
-															echo(' style="color: ' . $lArticleIsPaidactivationTextColor . '"'); ?>>
-															<?php
-															// in assets/functions//mm2_helpers.php
-															echo mm2_helpers_headline($lTextTitle, 'h2');
-															echo($lTextContent);
-															?>
-                                                        </div>
-                                                    </div>
-													<?php
-													if ($lArticleIsPaidactivation) {
-														?>
-                                                        <div class="paidactivation_hint" style="background-color: <?php echo($lArticleIsPaidactivationBackgroundColor); ?>">
-                                                            <span style="color: <?php echo($lArticleIsPaidactivationTextColor); ?>">Entgeltliche Einschaltung</span>
-                                                        </div>
-                                                        <style>
-                                                            .wrapper_mufusli .mufusli .carousel .mufusli_<?php echo($lMufusliCounter); ?>_<?php echo($lElementsCount); ?> .info::after {
-                                                                background: linear-gradient(180deg, <?php echo($lBackgroundColorRgba1); ?> 0%, <?php echo($lBackgroundColorRgba2); ?> 100%);
-                                                            }
-                                                        </style>
-														<?php
-													}
-													?>
-                                                </div>
-                                            </a>
-											<?php
-				    						// mufusli_elements_text
-											break;
-										// mufusli_elements_vimeo
-										case 'mufusli_elements_vimeo':
-											
-											// Get End date
-											$lEndDate = $lElement['mufusli_elements_vimeo_end_date'];
-											if ( $lEndDate && !empty($lEndDate ))
-											{
-												if ( $lEndDate < $lDateToday )
-												{
-													// continue;
-													break;
-												}
-											}
-											
-											// Check if Vimeo cookie are allowed
-											$lVimeoDnt = '';
-											if (function_exists('BorlabsCookieHelper')) {
-												if (!BorlabsCookieHelper()->gaveConsent('vimeo')) {
-													$lVimeoDnt = 'dnt=1&';
-												}
-											}
-											
-											// Get the fields for the video element
-											$lVimeoId = $lElement['mufusli_elements_vimeo_id'];
-											$lVimeoTag = '<iframe src="https://player.vimeo.com/video/' . $lVimeoId . '?' . $lVimeoDnt . 'app_id=122963" width="100%" height="100%" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe><script src="https://player.vimeo.com/api/player.js"></script>';
-											$lPreviewImageId = $lElement['mufusli_elements_vimeo_previewimage'];
-											$lPreviewImageTag = mm2_GetImageCode($lPreviewImageId, '270', true);
-											$lVideoLength = $lElement['mufusli_elements_vimeo_minutes'];
-											$lVideoInfoTitle = $lElement['mufusli_elements_vimeo_infotitle'];
-											if (empty($lVideoInfoTitle)) {
-												if (!empty($lVideoLength) && ($lVideoLength > 0)) {
-													$hours = floor($lVideoLength / 60);
-													$minutes = ($lVideoLength % 60);
-													$lVideoInfoTitle = sprintf('%02d:%02d min', $hours, $minutes);
-												} else {
-													$lVideoInfoTitle = '&bnsp;';
-												}
-											}
-											$lVideoTitle = $lElement['mufusli_elements_vimeo_title'];
-											$lVideoSubTitle = $lElement['mufusli_elements_vimeo_subtitle'];
-											if (empty($lVideoSubTitle))
-												$lVideoSubTitle = '&nbsp;';
-											$lVideoContent = wpautop($lElement['mufusli_elements_vimeo_content']);
-											$lVimeoUrl = "javascript:openDarkbox('darkbox_vimeo_" . $lVimeoId . "')";
-											
-											// Get darkbox link
-											$lDarkboxLink = $lElement['mufusli_elements_vimeo_link'];
-											
-											// Check if url is in space of MM
-											$lArticleId = url_to_postid($lDarkboxLink);
-											
-											// If MM post, check if it is only for logged in users
-											$lVisibleForAll = true;
-											if ($lArticleId) {
-												$lVisibleForAll = get_field('mm2_visibility', $lArticleId) === false;
-											}
-											
-											// Check if user is logged in
-											if (is_user_logged_in())
-												$lVisibleForAll = true;
-											
-											// Check if only visible for logged in
-											if (!$lVisibleForAll) {
-												$lVimeoTag = '<div class="withloginonly"></div>';
-												$lVimeoTag .= '<style>.withloginonly::before {color: ' . $lBackgroundColor . ' !important;}</style>';
-											}
-											
-											// Check if paid activation
-											$lArticleIsPaidactivationBackgroundColor = $lBackgroundColor;
-											$lArticleIsPaidactivationTextColor = '#FFFFFF';
-											$lArticleIsPaidactivation = $lElement['mufusli_elements_vimeo_paidactivation'] == '1';
-											if ($lArticleIsPaidactivation) {
-												$lElementCss = ' nohover paidactivation mufusli_' . $lMufusliCounter . '_' . $lElementsCount;
-												$lArticleIsPaidactivationBackgroundColor = $lElement['mufusli_elements_vimeo_paidactivation_backgroundcolor'] ?? $lArticleIsPaidactivationBackgroundColor;
-												$lArticleIsPaidactivationTextColor = $lElement['mufusli_elements_vimeo_paidactivation_textcolor'] ?? $lArticleIsPaidactivationTextColor;
-												
-												$lBackgroundColorRgba1 = hex2rgba($lArticleIsPaidactivationBackgroundColor, 0);
-												$lBackgroundColorRgba2 = hex2rgba($lArticleIsPaidactivationBackgroundColor, 1);
-											}
-											?>
-                                            <a href="<?php echo($lVimeoUrl); ?>">
-                                                <div class="<?php echo($lCellCss); ?>">
-                                                    <div class="video<?php echo($lElementCss); ?>">
-                                                        <div class="img">
-															<?php echo($lPreviewImageTag); ?>
-                                                            <div class="article_icon"><i class="fas fa-video" aria-hidden="true"></i></div>
-                                                        </div>
-                                                        <div class="info"<?php if ($lArticleIsPaidactivation)
-															echo(' style="color: ' . $lArticleIsPaidactivationTextColor . '"'); ?>>
-                                                            <span class="infotitle"><?php echo($lVideoInfoTitle); ?></span>
-                                                            <h3><?php echo($lVideoTitle) ?></h3>
-                                                            <span class="subtitle"><?php echo($lVideoSubTitle); ?></span>
-                                                            <p>
-																<?php echo($lVideoContent) ?>
-                                                            </p>
-                                                        </div>
-														<?php
-														if ($lArticleIsPaidactivation) {
-															?>
-                                                            <div class="paidactivation_hint" style="background-color: <?php echo($lArticleIsPaidactivationBackgroundColor); ?>">
-                                                                <span style="color: <?php echo($lArticleIsPaidactivationTextColor); ?>">Entgeltliche Einschaltung</span>
-                                                            </div>
-                                                            <style>
-                                                                .wrapper_mufusli .mufusli .carousel .mufusli_<?php echo($lMufusliCounter); ?>_<?php echo($lElementsCount); ?> .info::after {
-                                                                    background: linear-gradient(180deg, <?php echo($lBackgroundColorRgba1); ?> 0%, <?php echo($lBackgroundColorRgba2); ?> 100%);
-                                                                }
-                                                            </style>
-															<?php
-														}
-														?>
-                                                    </div>
-                                                </div>
-                                            </a>
-											<?php
-											// Append link if there to content for darkbox
-											$lDarkBoxLinkContent = '';
-											if (!empty($lDarkboxLink)) {
-												if ($lVisibleForAll) {
-													$lDarkboxLinkText = $lElement['mufusli_elements_vimeo_linktext'];
-													$lDarkBoxLinkContent = '<p><a href="' . $lDarkboxLink . '" target="_self">' . $lDarkboxLinkText . '</a></p>';
-												} else {
-													$lDarkBoxLinkContent = '<p>Melden Sie sich bitte <a href="https://www.medmedia.at/community/registrieren/"><span>hier</span></a> ';
-													$lDarkBoxLinkContent .= 'kostenlos und unverbindlich an, um den Inhalt vollständig einzusehen und weitere Services von';
-													$lDarkBoxLinkContent .= 'www.medmedia.at zu nutzen.</p>';
-													$lDarkBoxLinkContent .= '<p><a href="https://www.medmedia.at/community/registrieren/" id="reg_link">Zur Anmeldung</a></p>';
-												}
-											}
-											
-											mm2_DarkboxPrint('vimeo_' . $lVimeoId, $lVimeoTag, $lVideoTitle, $lVideoContent . $lDarkBoxLinkContent, 'vimeo');
-											// mufusli_elements_vimeo
-											break;
-										
-										default:
-											break;
-									} // endswitch
-									
-									
-								} // endforeach
-								
-								// Is there a detail button
-								$lShowDetailsButton = $aOptions['mufusli_detailbutton'] == '1';
-								?>
-                                <div class="navigation mufusli_<?php echo($lMufusliCounter); ?>">
-                                    <ul>
-                                        <li class="left"><a href="javascript:showPrevMufusliPage(<?php echo($lMufusliCounter); ?>);"><i class="far fa-chevron-left"></i></a></li>
-                                        <li class="right"><a href="javascript:showNextMufusliPage(<?php echo($lMufusliCounter); ?>);"><i class="far fa-chevron-right"></i></a></li>
-                                    </ul>
-                                </div>
-
-                                <div class="dots mufusli_<?php echo($lMufusliCounter); ?>">
-									<?php
-									if ($lShowDetailsButton) {
-										$lDetailButtonText = $aOptions['mufusli_detailbutton_text'] . ' &raquo;';
-										$lDetailButtonLink = $aOptions['mufusli_detailbutton_link'];
-										$lDetailButtonTarget = $aOptions['mufusli_detailbutton_linktarget'];
-										if (!$lDetailButtonTarget)
-											$lDetailButtonTarget = '_self';
-										?>
-                                        <p class="more">
-                                            <a href="<?php echo($lDetailButtonLink); ?>" target="<?php echo($lDetailButtonTarget); ?>"><?php echo($lDetailButtonText); ?></a>
-                                        </p>
-										<?php
-									}
-									
-									?>
-                                    <ul>
-                                        <li class="current"><a href="javascript:showMufusliPage(<?php echo($lMufusliCounter . ', 0'); ?>);"></a>
-                                        </li>
-										<?php
-										// Show more dots if necessary
-										for ($i = 1; $i < $lElementsCount; $i++) {
-											?>
-                                            <li>
-                                                <a href="javascript:showMufusliPage(<?php echo($lMufusliCounter . ', ' . $i); ?>);"></a>
-                                            </li>
-											<?php
-										}
-										?>
-                                    </ul>
-                                </div>
-								<?php
-								if ($lShowDetailsButton) {
-									?>
-                                    <div id="clear mufusli_<?php echo($lMufusliCounter); ?>" style="clear: both">&nbsp;</div>
-									<?php
-								}
-								?>
-                            </div>
-                        </div>
-                    </div>
-					<?php
-				}
-			}
-            else
-            {
-				// Content is hidden be security
-				?>
-                <div class="mufusli" mufusliid="<?php echo($lMufusliCounter); ?>"<?php echo($lLayoutTag); ?>>
-                    <div class="grid-container">
-						<?php echo($lLoginText); ?>
-                    </div>
-                </div>
-				<?php
-			}
-			?>
-            <div style="clear: both;"></div>
-        </div>
-		<?php
-
-	}
-}
-
-/**
- * @param $aId
- * @param $aImageOrVideoTag
- * @param $aTitle
- * @param $aContent
- * @param $aTypeClass
- * @return void
- */
-function mm2_DarkboxPrint($aId, $aImageOrVideoTag, $aTitle, $aContent, $aTypeClass = 'img') {
-	?>
-    <div class="darkbox" id="darkbox_<?php echo($aId); ?>">
-        <div class="db_content">
-            <div class="<?php echo($aTypeClass) ?>">
-				<?php echo($aImageOrVideoTag); ?>
-            </div>
-        </div>
-        <div class="db_info">
-            <div class="db_close">
-                <a href="javascript:closeDarkbox()">
-                    Schließen &nbsp; <i class="fal fa-times"></i>
-                </a>
-            </div>
-            <h3 class="db_title"><?php echo($aTitle); ?></h3>
-            <div>
-				<?php echo($aContent); ?>
-            </div>
-        </div>
-    </div>
-	<?php
-} // mm2_DarkboxPrint
+        return "done: " . $lPassword;
+    }
 
 
-/**
- * @desc Get Mufusli Data from Repeater
- * @param array $lTeaserFieldsData
- * @param int $i
- * @return array|void
- */
-function GetMufusliData( array $lTeaserFieldsData, int $i )
-{
-	global $_ldebug;
-	if ( $_ldebug )
-	{
-		// echo ('<pre>Counter in Mufusli' . $i);
-		// var_dump($lTeaserFields['mm2_imfokus_categories_' . $i . '_mufusli_elements']);
-		// echo('</pre>');
-	}
-	// Create the new mufusli elements
-	$lMufusliElements = array();
-	$lCategoryElements = array();
-	// Are there mufusli elements in this category
-	if (
-		empty($lTeaserFieldsData['mm2_imfokus_categories_' . $i . '_mufusli_elements']) &&
-		empty($lTeaserFieldsData['mm2_imfokus_categories_' . $i . '_mufusli_infobox_content'])
-	)
-	{
-		return $lCategoryElements;
-	}
+    /**
+     * Set or update Arztnummer for a user
+     *
+     * @param string $id
+     * @return response
+     */
+    public function set_arztnummer($id, $arztnummer) {
+        $current_user_id = get_current_user_id();
+        if (empty($current_user_id)) {
+            error_log('REPORT: set_arztnummer 1');
+            return new WP_Error('json_not_logged_in', __('Sie sind derzeit nicht eingeloggt.'), array('status' => 403,));
+        }
+        if ($current_user_id != $id) {
+            error_log('REPORT: set_arztnummer 2');
+            return new WP_Error('json_not_currentuser', __('Sie können nur Ihre eigene Arztnummer editieren.'), array('status' => 403,));
+        }
+        if (empty($arztnummer)) {
+            error_log('REPORT: set_arztnummer 3');
+            return new WP_Error('json_no_data', __('Bitte geben Sie eine Arztnummer ein.'), array('status' => 403,));
+        }
 
-	$lCategoryType = 'mufusli';
-	// Copy the values
-	$lPrefix = 'mm2_imfokus_categories_' . $i . '_';
-        $lOptions['mufusli_infobox'] = $lTeaserFieldsData[$lPrefix . 'mufusli_infobox'];
-        $lOptions['mufusli_infobox_content'] = $lTeaserFieldsData[$lPrefix . 'mufusli_infobox_content'];
-        $lOptions['mufusli_title'] = $lTeaserFieldsData[$lPrefix . 'mufusli_title'];
-        $lOptions['mufusli_backgroundcolor'] = $lTeaserFieldsData[$lPrefix . 'mufusli_backgroundcolor'];
-        $lOptions['mufusli_layout'] = $lTeaserFieldsData[$lPrefix . 'mufusli_layout'];
-        $lOptions['mufusli_css'] = $lTeaserFieldsData[$lPrefix . 'mufusli_css'];
-        $lOptions['mufusli_detailbutton'] = $lTeaserFieldsData[$lPrefix . 'mufusli_detailbutton'];
-        $lOptions['mufusli_detailbutton_text'] = $lTeaserFieldsData[$lPrefix . 'mufusli_detailbutton_text'];
-        $lOptions['mufusli_detailbutton_link'] = $lTeaserFieldsData[$lPrefix . 'mufusli_detailbutton_link'];
-        $lOptions['mufusli_detailbutton_linktarget'] = $lTeaserFieldsData[$lPrefix . 'mufusli_detailbutton_linktarget'];
-        $lOptions['mufusli_visibility_mode'] = $lTeaserFieldsData[$lPrefix . 'mufusli_visibility_mode'];
-        $lOptions['mufusli_visibility_grouprights'] = $lTeaserFieldsData[$lPrefix . 'mufusli_visibility_grouprights'];
-        $lOptions['mufusli_visibility_logintext'] = $lTeaserFieldsData[$lPrefix . 'mufusli_visibility_logintext'];
-
-	// Get the elements
-	$lElementTypes = unserialize($lTeaserFieldsData[$lPrefix . 'mufusli_elements']);
-	foreach ($lElementTypes as $lKey => $lElementType)
-	{
-		$lMufusliElement = array();
-		$lMufusliElement['acf_fc_layout'] = $lElementType;
-		foreach ($lTeaserFieldsData as $lTeaserKey => $lTeaserValue)
-		{
-			$lTeaserfieldKey = $lPrefix . 'mufusli_elements_' . $lKey . '_' . $lElementType . '_';
-			if (strpos($lTeaserKey, $lTeaserfieldKey) === 0)
-			{
-				$lMufusliElementKey = $lElementType . '_' . substr($lTeaserKey, strlen($lTeaserfieldKey));
-				$lMufusliElement[$lMufusliElementKey] = $lTeaserValue;
-			}
-		}
-		// Add it to the mufusli list
-		$lMufusliElements[] = $lMufusliElement;
-	}
-
-	// Add it to the list
-	$lCategoryElements[] = array(
-		'type' => $lCategoryType,
-		'index' => $i,
-		//'anchor' => $_lcat->slug,
-		'options' => $lOptions,
-		'elements' => $lMufusliElements,
-		//'title' => $_lcat->name
-	);
-	return $lCategoryElements;
-
-} // GetMufusliData
+        //$oReturn = new stdClass();
+        $easydoc_UserClass = new easydoc_Users;
+        $_setarztnummer = $easydoc_UserClass->set_arztnummer($id, $arztnummer);
+        return $_setarztnummer;
+    } // set_arztnummer
 
 
-/**
- * @param string $ChannelCpt
- */
-function PrintMufusliFromOptions( string $ChannelCpt  )
-{
-    if ( empty($ChannelCpt ))
-	{
+    /**
+     * Subscribe to a specfic newsletter by its id
+     *
+     * @param string $newsId The id of the newsletter to be subscribed by the user
+     * @return boolean        True, if successful or false if not
+     */
+    public function subscribe_news($newsId) {
+        // Check if user is logged in
+        $current_user_id = get_current_user_id();
+        if (empty($current_user_id)) {
+            error_log('REPORT: subscribe_news');
+            return new WP_Error('json_not_logged_in', __('You are not currently logged in.'), array('status' => 403,));
+        }
+
+        // Get the email address from the logged in user
+        $current_user = wp_get_current_user();
+        $lEmailAddress = $current_user->user_email;
+
+        // Handle newsletters
+        global $wpdb;
+        global $Knews_plugin;
+
+        if (!$Knews_plugin->initialized)
+            $Knews_plugin->init();
+
+        // Get the custom fields to be used in knews from bb
+        $extra_fields = $Knews_plugin->get_extra_fields();
+
+        $custom_fields = array();
+        $nachname_bp = bp_get_member_profile_data('field=Nachname');
+        $vorname_bp = bp_get_member_profile_data('field=Vorname');
+        $title_bp = bp_get_member_profile_data('field=Titel');
+        $anrede_bp = bp_get_member_profile_data('field=Anrede');
+
+        foreach ($extra_fields as $field) {
+            if ($field->name == 'surname')
+                $custom_fields[$field->id] = $nachname_bp;
+            if ($field->name == 'name')
+                $custom_fields[$field->id] = $vorname_bp;
+            if ($field->name == 'titel')
+                $custom_fields[$field->id] = $title_bp;
+            if ($field->name == 'anrede')
+                $custom_fields[$field->id] = $anrede_bp;
+        }
+
+        // Write the custom fields for the user
+        $user_id = get_user_id($lEmailAddress);
+        while ($cf = current($custom_fields)) {
+            $Knews_plugin->set_user_field($user_id, key($custom_fields), esc_sql($cf), true);
+            next($custom_fields);
+        }
+
+        // And add the user to knews
+        $Knews_plugin->add_user($lEmailAddress, $newsId, 'de', 'de_DE', $custom_fields, true);
+
+        // Return true
+        return true;
+    }
+
+
+    /**
+     * Subscribe to a specfic newsletter by its id
+     *
+     * @param string $newsId The id of the newsletter to be subscribed by the user
+     * @return boolean          True, if successful or false if not
+     */
+    public function unsubscribe_news($newsId) {
+        // Check if user is logged in
+        $current_user_id = get_current_user_id();
+        if (empty($current_user_id)) {
+            error_log('REPORT: unsubscribe_news');
+            return new WP_Error('json_not_logged_in', __('You are not currently logged in.'), array('status' => 403,));
+        }
+
+        // Get the email address from the logged in user
+        $current_user = wp_get_current_user();
+        $lEmailAddress = $current_user->user_email;
+
+        // Unsubscribe the user from the mailing list
+        delete_user_from_mailinglist($lEmailAddress, $newsId);
+
+        // Return true
+        return true;
+    }
+
+
+    /**
+     *  Check if an given email-address is registered in wp
+     *
+     * @param string $email The email-address which should be checked
+     * @return boolean          True, if the email-address is free or false if not
+     */
+
+    public function check_email_wp($email) {
+
+        $exists = email_exists($email);
+        $oReturn = new stdClass();
+        $oReturn->email = $email;
+
+        if ($exists) {
+
+            $oReturn->status = true;
+        } else {
+            $oReturn->status = false;
+        }
+
+        return $oReturn;
+    } // check_email_wp
+
+
+    /**
+     *  Check if an given email-address is free or not
+     *
+     * @param string $email The email-address which should be checked
+     * @return boolean          True, if the email-address is free or false if not
+     */
+
+    public function check_email_address($email) {
+
+        // Check if user is logged in
+        $current_user_id = get_current_user_id();
+        if (empty($current_user_id)) {
+            error_log('REPORT: check_email_address');
+            return new WP_Error('json_not_logged_in', __('You are not currently logged in.'), array('status' => 403,));
+        }
+
+        // Check if email is the same as the user's one
+        $current_user = wp_get_current_user();
+        if ($current_user->user_email == $email) {
+            // It is the same email ==> email is ok
+            return true;
+        }
+
+        // Try to get the user with this email-address
+        $lUser = get_user_by('email', $email);
+        if ($lUser === false) {
+            // No user with this email found ==> email is free
+            return true;
+        }
+
+        // Email is not free
         return false;
     }
 
-	// Get the mufusli elements
-	$lElements = get_field($ChannelCpt.'_mufusli', 'option');
-    //
-	// Are there mufusli elements in this category
-	if (
-		empty($lElements['mufusli_elements']) &&
-		empty($lElements['mufusli_infobox_content'])
-	)
-	{
-		return false;
-	}
 
-	$lOptions['mufusli_infobox'] = $lElements['mufusli_infobox'];
-	$lOptions['mufusli_infobox_content'] = $lElements['mufusli_infobox_content'];
-	$lOptions['mufusli_title'] = $lElements['mufusli_title'];
-	$lOptions['mufusli_backgroundcolor'] = $lElements['mufusli_backgroundcolor'];
-	$lOptions['mufusli_layout'] = $lElements['mufusli_layout'];
-	$lOptions['mufusli_css'] = $lElements['mufusli_css'];
-	$lOptions['mufusli_detailbutton'] = $lElements['mufusli_detailbutton'];
-	$lOptions['mufusli_detailbutton_text'] = $lElements['mufusli_detailbutton_text'];
-	$lOptions['mufusli_detailbutton_link'] = $lElements['mufusli_detailbutton_link'];
-	$lOptions['mufusli_detailbutton_linktarget'] = $lElements['mufusli_detailbutton_linktarget'];
-	$lOptions['mufusli_visibility_mode'] = $lElements['mufusli_visibility_mode'];
-	$lOptions['mufusli_visibility_grouprights'] = $lElements['mufusli_visibility_grouprights'];
-	$lOptions['mufusli_visibility_logintext'] = $lElements['mufusli_visibility_logintext'];
+    /**
+     * Get Last Visited Fall Data for a User
+     *
+     * @param string $id
+     * @return response
+     */
+    public function get_last_fall($id) {
+        $current_user_id = get_current_user_id();
+        if (empty($current_user_id)) {
+            error_log('REPORT: get_last_fall');
+            return new WP_Error('json_not_logged_in', __('Sie sind derzeit nicht eingeloggt.'), array('status' => 403,));
+        }
 
-	// Get the elements
-	$lMufusliElements = $lElements['mufusli_elements'];
-    // Print the MuFuSli
-     mm2_MuFuSliPrint($lOptions, $lMufusliElements);
-} // PrintMufusliFromOptions
-
-/**
- * @param string $ChannelCpt
- * @return false|void
- */
-function PrintMufusliRepeaterFromOptions( string $ChannelCpt )
-{
-	if ( empty($ChannelCpt ))
-	{
-		return false;
-	}
-
-	// Get the mufusli elements
-	$lElements = get_field( $ChannelCpt.'_mm2_mufusli-repeater', 'option' ) ?? '';
-	if ( !empty($lElements) )
-	{
-	    foreach ( $lElements as $key=>$lElement )
-	    {
-		    if (
-			    empty($lElement['mufusli_elements']) &&
-			    empty($lElement['mufusli_infobox_content'])
-		    )
-		    {
-			    continue;
-		    }
-		    $lOptions = array();
-		    $lOptions['mufusli_infobox'] = $lElement['mufusli_infobox'];
-		    $lOptions['mufusli_infobox_content'] = $lElement['mufusli_infobox_content'];
-		    $lOptions['mufusli_title'] = $lElement['mufusli_title'];
-		    $lOptions['mufusli_backgroundcolor'] = $lElement['mufusli_backgroundcolor'];
-		    $lOptions['mufusli_layout'] = $lElement['mufusli_layout'];
-		    $lOptions['mufusli_css'] = $lElement['mufusli_css'];
-		    $lOptions['mufusli_detailbutton'] = $lElement['mufusli_detailbutton'];
-		    $lOptions['mufusli_detailbutton_text'] = $lElement['mufusli_detailbutton_text'];
-		    $lOptions['mufusli_detailbutton_link'] = $lElement['mufusli_detailbutton_link'];
-		    $lOptions['mufusli_detailbutton_linktarget'] = $lElement['mufusli_detailbutton_linktarget'];
-		    $lOptions['mufusli_visibility_mode'] = $lElement['mufusli_visibility_mode'];
-		    $lOptions['mufusli_visibility_grouprights'] = $lElement['mufusli_visibility_grouprights'];
-		    $lOptions['mufusli_visibility_logintext'] = $lElement['mufusli_visibility_logintext'];
-
-           // $lOptions['mufusli_elements_taxonomy'] = $lElement['mufusli_elements_taxonomy'];
-
-            // Get the elements
-		    $lMufusliElements  =  $lElement['mufusli_elements'];
-		    // Print the MuFuSli
-		    mm2_MuFuSliPrint($lOptions, $lMufusliElements);
-	    }
-	}
-} // PrintMufusliRepeaterFromOptio
+        $oReturn = new stdClass();
+        $easydoc_lastfalldata = new easydoc_Users;
+        $oReturn = $easydoc_lastfalldata->get_visitedfall($current_user_id, $id);
+        return $oReturn;
+    } // get_last_fall
 
 
-    ?>
+    /**
+     * Create or Update Last Visited Fall Data for a User
+     *
+     * @param string $id
+     * @param string $fallid
+     * @return response
+     */
+    public function cu_last_fall($id, $fallid) {
+        $current_user_id = get_current_user_id();
+        if (empty($current_user_id)) {
+            error_log('REPORT: cu_last_fall');
+            return new WP_Error('json_not_logged_in', __('Sie sind derzeit nicht eingeloggt.'), array('status' => 403,));
+        }
 
+        $oReturn = new stdClass();
+        $easydoc_lastfalldata = new easydoc_Users;
+        $oReturn = $easydoc_lastfalldata->write_visitedfall($current_user_id, $id, $fallid);
+        return $oReturn;
+    } // cu_last_fall
+
+
+    /**
+     * Get Current Logged in User Profile
+     *
+     * @return response
+     */
+    public function get_current_user() {
+
+        $current_user_id = get_current_user_id();
+        if (empty($current_user_id)) {
+            // error_log('REPORT: get_current_user');
+            return new WP_Error('json_not_logged_in', __('You are not currently logged in.'), array('status' => 403,));
+        }
+        $response = json_ensure_response($this->get_user($current_user_id));
+
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+        if (!($response instanceof WP_JSON_ResponseInterface)) {
+            $response = new WP_JSON_Response($response);
+        }
+
+        $response->header('Access-Control-Allow-Origin', "*");
+        $response->header('Access-Control-Allow-Headers', "Authorization, Accept, Origin, Content-Type");
+        $response->header('Access-Control-Allow-Methods', "GET, POST, PUT, DELETE, OPTIONS");
+
+        return $response;
+    }
+
+    /**
+     * Retrieve a user.
+     *
+     * @param int $id User ID
+     * @return response
+     */
+    public function get_user($id) {
+        $current_user_id = get_current_user_id();
+
+        if ($current_user_id !== $id && !current_user_can('list_users')) {
+            error_log('REPORT: get_user');
+            return new WP_Error('json_user_cannot_list', __('Sorry, you are not allowed to view this user.'), array('status' => 403));
+        }
+
+        $user = get_userdata($id);
+
+        if (empty($user->ID)) {
+            return new WP_Error('json_user_invalid_id', __('Invalid user ID.'), array('status' => 400));
+        }
+
+        return $this->prepare_user($user);
+    }
+
+    /**
+     *
+     * Prepare a User entity from a WP_User instance.
+     *
+     * @param $user : WP_User Object
+     * @param $context : point of origin, default is for web, dpo app; apoon is for APO:ON APP
+     * @return array
+     */
+    public function prepare_user($user, $context = 'default') {
+        if (!function_exists('bp_is_active')) {
+            error_log('REPORT: prepare_user 1');
+            return new WP_Error('prepare_user', __('Buddypress is not active'), array('status' => 403));
+        }
+
+        $user_fields = array(
+            'ID' => $user->ID,
+            'firstname' => $user->first_name,
+            'surname' => $user->last_name,
+            'eMail' => $user->user_email,
+            'Role' => $user->roles
+        );
+
+        // Buddypress xProfile Fields
+        if (!bp_has_profile(array('user_id' => $user->ID))) {
+            error_log('REPORT: prepare_user 2');
+            return new WP_Error('json_post_invalid_id', __('Invalid User.'), array('status' => 403));
+        }
+
+        foreach ($this->xprofile_fields as $user_fieldname => $bp_xprofilefieldname) {
+            if ($user_fieldname == 'birthday') {
+                $field_id = xprofile_get_field_id_from_name($this->xprofile_fields['birthday']);
+                $birthday = maybe_unserialize(BP_XProfile_ProfileData::get_value_byid($field_id, $user->ID));
+                $datetime = date("Y-m-d\TH:i:sP", strtotime($birthday));
+                $user_fields[$user_fieldname] = $datetime;
+            } elseif ($user_fieldname == 'professional' || $user_fieldname == 'professionalCode' || $user_fieldname == 'professionalAddon') {
+                $user_fields[$user_fieldname] = (array)xprofile_get_field_data($bp_xprofilefieldname, $user->ID);
+            } else {
+                $user_fields[$user_fieldname] = xprofile_get_field_data($bp_xprofilefieldname, $user->ID);
+            }
+        }
+
+        // Knews Subscribed mailinglists
+        // $user_fields['newsletters'] = $this->get_newsletters($user->ID);
+
+        switch ($context) {
+
+            // Default Behaviour for Web
+            case 'web':
+
+                // Get Microlearning Abos
+                $easydoc_MicroClass = new easydoc_Micro;
+                $_ml_abos = $easydoc_MicroClass->get_ml_abos_2($user->ID, 'default');  //! 0.2 sec
+                if ($_ml_abos) {
+                    $user_fields['microlearning'] = $_ml_abos->abos;
+                }
+
+                // Courses
+                $easydoc_UserClass = new easydoc_Users;
+                $courses_data = $easydoc_UserClass->get_visited_courses($user->ID);
+
+                if (!is_wp_error($courses_data) || !empty($courses_data)) {
+
+                    $easydoc_courses = new easydoc_Courses;
+                    //$_cf_fieldnames = $easydoc_courses->get_cf_names();
+
+                    $easydocdata = array();
+                    $i = 0;
+
+
+                    // Get all visited "fall"
+                    global $wpdb;
+                    $lLastVisitedFalls = $wpdb->get_results("
+							SELECT *
+							FROM $wpdb->easydoclastvisitedfall
+							WHERE UID = $user->ID
+						");
+
+                    $lGetSubmits = $wpdb->get_results("
+							SELECT *
+							FROM $wpdb->easydocdata
+							WHERE UID = $user->ID
+						");
+
+                    foreach ($courses_data as $course_id) {
+                        // Get Course Data
+                        // arg, was get_course
+                        $tmp_data = $easydoc_courses->get_course_desktop($course_id, 'teaser');
+
+                        // Get Url
+                        $courses_visitedData = new stdClass();
+                        $courses_visitedData->visitedfall = false;
+                        foreach ($lLastVisitedFalls as $lLastFall) {
+                            if ($lLastFall->courseid == $course_id) {
+                                $courses_visitedData->visitedfall['fallid'] = $lLastFall->fallid;
+                                break;
+                            }
+                        }
+
+                        if (!is_wp_error($tmp_data) || !empty($tmp_data)) {
+                            $easydocdata[$i] = $tmp_data;
+
+                            if ($courses_visitedData->visitedfall) {
+                                // Generate permalink
+                                $easydocdata[$i]->lastvisitedfallurl = $easydoc_courses->get_easydoc_permalink($course_id, $tmp_data->medienTyp, $courses_visitedData->visitedfall['fallid']);
+                                $easydocdata[$i]->lastvisitedcaseid = $courses_visitedData->visitedfall['fallid'];
+                            } else {
+                                $easydocdata[$i]->lastvisitedfallurl = $easydoc_courses->get_easydoc_permalink($course_id, $tmp_data->medienTyp);
+                                $easydocdata[$i]->lastvisitedcaseid = -1;
+                            }
+                        }
+
+                        $_currentCourseProgress = $easydoc_UserClass->get_progress( $user->ID, $course_id );
+                        $easydocdata[$i]->courseprogress = $_currentCourseProgress->percent;
+//                        $easydocdata[$i]->courseprogress = 100;
+
+                        $_coursestatus = array();
+                        foreach ($lGetSubmits as $lGetSubmit) {
+                            if ($lGetSubmit->courseid == $course_id) {
+                                $_coursestatus = $lGetSubmit;
+                                break;
+                            }
+                        }
+
+                        if (!empty($_coursestatus->status)) {
+                            $easydocdata[$i]->coursestatus = $_coursestatus->status->status;
+                        }
+
+                        $i++;
+                    } // endforeach
+
+                    //$user_fields['courses_id'] = $courses_data;
+                    if (!empty($easydocdata)) {
+                        $user_fields['courses'] = $easydocdata;
+                    }
+                }
+
+                break;
+
+            // Default Behaviour for  DPO
+            case 'default':
+
+                // Get Microlearning Abos
+                $easydoc_MicroClass = new easydoc_Micro;
+                $_ml_abos = $easydoc_MicroClass->get_ml_abos_2($user->ID, 'default');
+                if ($_ml_abos) {
+                    $user_fields['microlearning'] = $_ml_abos->abos;
+                }
+
+                // Courses
+                $easydoc_UserClass = new easydoc_Users;
+                $courses_data = $easydoc_UserClass->get_visited_courses($user->ID);
+
+                if (!is_wp_error($courses_data) || !empty($courses_data)) {
+
+                    $easydoc_courses = new easydoc_Courses;
+                    $_cf_fieldnames = $easydoc_courses->get_cf_names();
+
+                    $easydocdata = array();
+                    $i = 0;
+
+                    foreach ($courses_data as $course_id) {
+
+                        // Get Course Data
+                        // arg, was get_course
+                        $tmp_data = $easydoc_courses->get_course_desktop($course_id, 'teaser');
+
+                        // Only Include Courses with CF Field: easydoc_apo_apptarget  set to apoon
+                        if ($tmp_data->apptarget == $_cf_fieldnames['apptarget_apoon']) {
+                            continue;
+                        }
+
+                        // Get Url
+                        $courses_visitedData = $easydoc_UserClass->get_visitedfall($user->ID, $course_id);
+                        if (!is_wp_error($tmp_data) || !empty($tmp_data)) {
+                            $easydocdata[$i] = $tmp_data;
+
+                            if ($courses_visitedData->visitedfall) {
+                                // Generate permalink
+                                $easydocdata[$i]->lastvisitedfallurl = $easydoc_courses->get_easydoc_permalink($course_id, $tmp_data->medienTyp, $courses_visitedData->visitedfall['fallid']);
+                                $easydocdata[$i]->lastvisitedcaseid = $courses_visitedData->visitedfall['fallid'];
+                            } else {
+                                $easydocdata[$i]->lastvisitedfallurl = $easydoc_courses->get_easydoc_permalink($course_id, $tmp_data->medienTyp);
+                                $easydocdata[$i]->lastvisitedcaseid = -1;
+                            }
+                        }
+
+                        $_currentCourseProgress = $easydoc_UserClass->get_progress($user->ID, $course_id);
+                        $easydocdata[$i]->courseprogress = $_currentCourseProgress->percent;
+
+                        $_coursestatus = $easydoc_UserClass->get_easydoc_submit($user->ID, $course_id);
+                        if (!empty($_coursestatus->status)) {
+                            $easydocdata[$i]->coursestatus = $_coursestatus->status->status;
+                        }
+
+                        $i++;
+                    } // endforeach
+
+                    //$user_fields['courses_id'] = $courses_data;
+                    if (!empty($easydocdata)) {
+                        $user_fields['courses'] = $easydocdata;
+                    }
+
+                }
+
+                break;
+
+            // Behaviour for APO:ON
+            case 'apoon':
+
+                // Get Microlearning Abos
+                $easydoc_MicroClass = new easydoc_Micro;
+                $_ml_abos = $easydoc_MicroClass->get_ml_abos_2($user->ID, 'apoon');
+                if ($_ml_abos) {
+                    $user_fields['microlearning'] = $_ml_abos->abos;
+                }
+
+                // Courses
+                $easydoc_UserClass = new easydoc_Users;
+                $courses_data = $easydoc_UserClass->get_visited_courses($user->ID);
+
+                if (!is_wp_error($courses_data) || !empty($courses_data)) {
+
+                    $easydoc_courses = new easydoc_Courses;
+                    $_cf_fieldnames = $easydoc_courses->get_cf_names();
+
+                    $easydocdata = array();
+                    $i = 0;
+
+                    foreach ($courses_data as $course_id) {
+
+                        // Get Course Data
+                        $tmp_data = $easydoc_courses->get_course_desktop($course_id, 'teaser');
+
+                        // Only Include Courses with CF Field: easydoc_apo_apptarget  set to apoon
+                        if (!$tmp_data->apptarget || ($tmp_data->apptarget != $_cf_fieldnames['apptarget_apoon'])) {
+                            continue;
+                        }
+
+                        // Get Url
+                        $courses_visitedData = $easydoc_UserClass->get_visitedfall($user->ID, $course_id);
+                        if (!is_wp_error($tmp_data) || !empty($tmp_data)) {
+                            $easydocdata[$i] = $tmp_data;
+
+                            if ($courses_visitedData->visitedfall) {
+                                // Generate permalink
+                                $easydocdata[$i]->lastvisitedfallurl = $easydoc_courses->get_easydoc_permalink($course_id, $tmp_data->medienTyp, $courses_visitedData->visitedfall['fallid']);
+                                $easydocdata[$i]->lastvisitedcaseid = $courses_visitedData->visitedfall['fallid'];
+                            } else {
+                                $easydocdata[$i]->lastvisitedfallurl = $easydoc_courses->get_easydoc_permalink($course_id, $tmp_data->medienTyp);
+                                $easydocdata[$i]->lastvisitedcaseid = -1;
+                            }
+                        }
+
+                        $_currentCourseProgress = $easydoc_UserClass->get_progress($user->ID, $course_id);
+                        $easydocdata[$i]->courseprogress = $_currentCourseProgress->percent;
+
+                        $_coursestatus = $easydoc_UserClass->get_easydoc_submit($user->ID, $course_id);
+                        if (!empty($_coursestatus->status)) {
+                            $easydocdata[$i]->coursestatus = $_coursestatus->status->status;
+                        }
+
+                        $i++;
+                    } // endforeach
+
+                    //$user_fields['courses_id'] = $courses_data;
+                    if (!empty($easydocdata)) {
+                        $user_fields['courses'] = $easydocdata;
+                    }
+
+                }
+
+                break;
+        }
+
+        return apply_filters('json_prepare_user', $user_fields, $user);
+    }
+
+
+    /**
+     * Get All Mailinglists and generate List for a User ID
+     *
+     * @param int $user_id
+     * @return array*
+     */
+    private function get_newsletters($user_id) {
+        global $Knews_plugin;
+        $oReturn = array();
+
+        if (!isset($Knews_plugin)) {
+            return new WP_Error('get_newsletters', __('Knews not installed'), array('status' => 404));
+        }
+        if (empty($user_id)) {
+            error_log('REPORT: get_newsletters');
+            return new WP_Error('get_newsletters', __('No User found.'), array('status' => 403));
+        }
+
+        if (!$Knews_plugin->initialized)
+            $Knews_plugin->init();
+
+        $array_knewslist = $Knews_plugin->tellMeLists();
+
+        $user_info = get_userdata($user_id);
+        $user_email = $user_info->user_email;
+        $user_newslist = user_subscribed_list($user_email);
+        if (!is_array($user_newslist)) {
+            $user_newslist = (array)$user_newslist;
+        }
+
+        foreach ($array_knewslist as $kID => $kName) {
+            if (in_array($kID, $user_newslist)) {
+                $oReturn[] = array(
+                    'title' => $kName,
+                    'subscription' => true,
+                    'id' => $kID
+                );
+            } else {
+                $oReturn[] = array(
+                    'title' => $kName,
+                    'subscription' => false,
+                    'id' => $kID
+                );
+            }
+        } // endforeach
+
+        return $oReturn;
+    }
+
+
+    /**
+     * Create a new user.
+     *
+     * @param $data
+     * @return mixed
+     */
+    public function create_user($data, $_source = 'App') {
+
+        foreach ($this->required_data as $arg) {
+            if (empty($data[$arg])) {
+                return new WP_Error('json_missing_callback_param', sprintf(__('Missing parameter %s'), $arg), array('status' => 400));
+            }
+        }
+
+        // Only User easydoctest@proman.org can create users
+        $current_user = wp_get_current_user();
+        if ($current_user->user_email != $this->adminemail) {
+            //if ( ! current_user_can( 'create_users' ) ) {
+            error_log('REPORT: create_user() 1 : ' . $current_user->user_email);
+            return new WP_Error('json_cannot_create2', __('Sorry, you are not allowed to create users.'), array('status' => 403));
+        }
+
+        if (!empty($data['ID'])) {
+            return new WP_Error('json_user_exists', __('User (email already registered.)'), array('status' => 400));
+        }
+
+        if (!empty($data['email'])) {
+            $exists = email_exists($data['email']);
+            if ($exists) {
+                return new WP_Error('json_user_exists', __('Für diese Email existiert bereits ein Konto.'), array('status' => 400));
+                error_log('REPORT: create_user() - email already exists:' . $data['email']);
+            }
+        }
+
+        $user_id = $this->insert_user($data);
+
+        if (is_wp_error($user_id)) {
+            error_log('REPORT: create_user() - error: ' . $user_id);
+            return $user_id;
+        }
+
+
+        // Save User Registration into DB
+        global $wpdb;
+        // Make Timestmap
+        $current_time = current_time('mysql');
+
+        //$_asource = "App";
+
+        if (!isset($wpdb->count_registrations)) {
+            $_data_table = $wpdb->prefix . "count_registrations";
+            $wpdb->count_registrations = $_data_table;
+            $wpdb->tables[] = str_replace($wpdb->prefix, '', $_data_table);
+        }
+
+        $wpdb_insertdata = $wpdb->insert($wpdb->count_registrations, array(
+                'UID' => $user_id,
+                'source' => $_source,
+                'time' => $current_time
+            ));
+
+
+        // Get ID of Created User
+        // Cannot do that, because easydoc is not allowed to view a user
+        if ($current_user->id != $user_id && !current_user_can('list_users')) {
+            $oReturn[] = array('ID' => $user_id);
+            return $oReturn;
+        }
+
+        $response = $this->get_user($user_id);
+        if (!$response instanceof WP_JSON_ResponseInterface) {
+            $response = new WP_JSON_Response($response);
+        }
+        $response->set_status(200);
+        $response->header('Location', json_url('/users/' . $user_id));
+
+        //error_log('REPORT: create_user() - finished: ' . $user_id );
+
+        return $response;
+    }
+
+
+    /**
+     * Updates a User.
+     *
+     * @param
+     * @return
+     */
+    public function update_user($data) {
+        $user = new stdClass;
+        $oReturn = new stdClass;
+        global $wpdb;
+
+        if (empty($data['ID'])) {
+            return new WP_Error('json_no_id', __('Fehlende BenutzerID.'), array('status' => 404));
+        } else {
+            $existing = get_userdata($data['ID']);
+
+            if (!$existing) {
+                return new WP_Error('json_user_invalid_id', __('Ungültige Benutzer ID.'), array('status' => 404));
+            }
+            //$oReturn->original = $existing;
+
+            if (!current_user_can('edit_user', $data['ID'])) {
+                error_log('REPORT: update_user');
+                return new WP_Error('json_user_cannot_edit', __('Sorry, you are not allowed to edit this user.'), array('status' => 403));
+            }
+
+            $user->ID = $existing->ID;
+            $lCurrentEmail = $existing->user_email;
+
+            // Names
+            if (isset($data['name'])) {
+                $user->display_name = $data['name'];
+            }
+
+            if (isset($data['firstname'])) {
+                $user->first_name = $data['firstname'];
+            } else if (isset($data['first_name'])) {
+                $user->first_name = $data['first_name'];
+            }
+
+            if (isset($data['surname'])) {
+                $user->last_name = $data['surname'];
+            } else if (isset($data['last_name'])) {
+                $user->last_name = $data['last_name'];
+            }
+
+            if (isset($data['birthday'])) {
+                $user->birthday = date("Y-m-d H:i:s", strtotime($data['birthday']));
+            }
+
+            if (isset($data['salutation'])) {
+                $user->salutation = $data['salutation'];
+            }
+
+            if (isset($data['title'])) {
+                $user->title = $data['title'];
+            }
+            // PLZ
+            if (isset($data['plz'])) {
+                $user->plz = $data['plz'];
+            }
+
+            // Email
+            if (!empty($data['email'])) {
+                $user->user_email = $data['email'];
+            }
+
+            if (isset($data['password'])) {
+                $user->user_pass = $data['password'];
+            }
+
+            // Pre-flight check
+            $user = apply_filters('json_pre_insert_user', $user, $data);
+
+            if (is_wp_error($user)) {
+                return $user;
+            }
+
+            // Set Role to Berufsgruppe Auswahl - because of wpmu this must be done for a blog
+            if (!empty($data['professional'])) {
+                if (array_key_exists($data['professional'], $this->customroles)) {
+                    if ($data['professional'] != 'administrator') {
+                        $user->role = $this->customroles[$data['professional']];
+                    }
+                }
+            }
+
+            // Update user in wordpress
+            $user_id = wp_update_user($user);
+
+            // Update email address in knews if needed
+            //knews_sync_email($lCurrentEmail, $user->user_email);
+
+            if (is_wp_error($user_id)) {
+                return $user_id;
+            }
+
+            // Continue with Additional Data
+            if (function_exists('xprofile_set_field_data')) {
+
+                // Sync Wordpress Names to BPs Xprofile
+                xprofile_set_field_data('Vorname', $user_id, $user->first_name);
+                xprofile_set_field_data('Nachname', $user_id, $user->last_name);
+
+                // Convert Birthday Date to useable Format
+                // Converted from <rcf3339>: "Y-m-d\TH:i:sP"  to: ??
+                //$this->set_format( '/^\d{4}-\d{1,2}-\d{1,2} 00:00:00$/', 'replace' ); // "Y-m-d 00:00:00"
+
+                if (isset($data['birthday'])) {
+                    //$bdate = date('F j, Y', strtotime( $data['birthday']));
+                    $bdate = date('Y-m-d H:i:s', strtotime($data['birthday']));
+                    xprofile_set_field_data($this->xprofile_fields['birthday'], $user_id, $bdate);
+                }
+                /*if (isset($data['plz'])) {
+                     xprofile_set_field_data($this->xprofile_fields['plz'], $user_id, $data['plz']);
+                 }*/
+
+                // Store Additional Data into xProfile Fields if available
+                foreach ($this->additional_data as $arg) {
+                    if (array_key_exists($arg, $this->xprofile_fields)) {
+
+                        // If no Data was submitted , set Field to false, --> TO RESEARCH
+                        if (empty($data[$arg])) {
+                            xprofile_set_field_data($this->xprofile_fields[$arg], $user_id, false);
+                        } else {
+                            //$value = maybe_serialize($data[ $arg ]);
+                            if ($arg == "professional") {
+                                if (is_array($data[$arg])) {
+                                    $data[$arg] = $data[$arg][0];
+                                }
+                            }
+                            xprofile_set_field_data($this->xprofile_fields[$arg], $user_id, $data[$arg]);
+                        }
+
+                    }
+                }
+            } // end xProfileFields
+
+            // Continue with Knews fields
+            if (isset($data['newsletters'])) {
+                //return $data['newsletters'];
+
+                $knews_user = new stdClass;
+                $easydoc_UserClass = new easydoc_Users;
+
+                $_array_newsletter_data = array();
+                foreach ($data['newsletters'] as $key => $value) {
+                    $_array_newsletter_data[$value['id']] = $value['subscription'];
+                }
+                $knews_user->userid = $user->ID;
+                $knews_user->first_name = $user->first_name;
+                $knews_user->last_name = $user->last_name;
+                $knews_user->user_email = $user->user_email;
+                if (isset($data['titel'])) {
+                    $knews_user->title = $data['titel'];
+                } else {
+                    $knews_user->title = '';
+                }
+                if (isset($data['salutation'])) {
+                    $knews_user->anrede = $data['salutation'];
+                } else {
+                    $knews_user->anrede = '';
+                }
+                //return $_array_newsletter_data;
+
+                $knews_user->mailinglistids = $_array_newsletter_data;
+                $easydoc_UserClass->subscribe_to_knews($knews_user);
+            } //end knews
+
+            // Set the password after everything if finished if needed
+            if (isset($data['password']) && ($data['password'] != "")) {
+                $user_id = (int)$user->ID;
+                $oReturn->pwdset = true;
+
+                $lPassword = wp_hash_password($data['password']); //  md5( $data['password'] );
+                $_doupdatepw = $wpdb->update($wpdb->users, array('user_pass' => $lPassword), array('ID' => $user_id));
+                if (is_wp_error($_doupdatepw)) {
+                    return $_doupdatepw;
+                }
+                wp_cache_delete($user_id, 'users');
+            }
+
+            $oReturn->user_id = $data['ID'];
+            $oReturn->plz = $user->plz;
+            $oReturn->first_name = $user->first_name;
+            $oReturn->last_name = $user->last_name;
+            return $oReturn;
+        }
+
+
+    } // update_user
+
+    protected function insert_user($data) {
+        $user = new stdClass;
+        global $wpdb;
+
+        if (!empty($data['ID'])) {
+            $existing = get_userdata($data['ID']);
+
+            if (!$existing) {
+                return new WP_Error('json_user_invalid_id', __('Invalid user ID.'), array('status' => 404));
+            }
+
+            if (!current_user_can('edit_user', $data['ID'])) {
+                error_log('REPORT: insert_user 1');
+                return new WP_Error('json_user_cannot_edit', __('Sorry, you are not allowed to edit this user.'), array('status' => 403));
+            }
+
+            $user->ID = $existing->ID;
+            $update = true;
+        } else {
+
+            // Only Admins or easydocTest@proman.at can create Users
+            $current_user = wp_get_current_user();
+            //if ( ! current_user_can( 'create_users' ) ) {
+            if ($current_user->user_email != $this->adminemail) {
+                error_log('REPORT: insert_user 2');
+                return new WP_Error('json_cannot_create1', __('Sorry, you are not allowed to create users.'), array('status' => 403));
+            }
+
+            $required = array(
+                'password',
+                'email'
+            );
+            foreach ($required as $arg) {
+                if (empty($data[$arg])) {
+                    return new WP_Error('json_missing_callback_param', sprintf(__('Missing parameter %s'), $arg), array('status' => 400));
+                }
+            }
+            $update = false;
+        }
+
+
+        // Basic  details
+        if (isset($data['password'])) {
+            $user->user_pass = $data['password'];
+            // For the Welcome email, Password must be stores in palntext
+            $user->sb_we_plaintext_pass = $data['password'];
+        }
+
+        // Names
+        if (isset($data['name'])) {
+            $user->display_name = $data['name'];
+        }
+
+        if (isset($data['firstname'])) {
+            $user->first_name = $data['firstname'];
+        } else if (isset($data['first_name'])) {
+            $user->first_name = $data['first_name'];
+        }
+
+        if (isset($data['surname'])) {
+            $user->last_name = $data['surname'];
+        } else if (isset($data['last_name'])) {
+            $user->last_name = $data['last_name'];
+        }
+
+        //error_log('REPORT: create_user() last_name: ' . $user->last_name);
+        //error_log('REPORT: create_user() first_name: ' . $user->first_name);
+
+        // Generate Username
+        if (isset($data['username'])) {
+            $user->user_login = $data['username'];
+        } else {
+            $user->user_login = $this->generate_Username($user->first_name, $user->last_name);
+            if (is_wp_error($user->user_login)) {
+                return $user->user_login;
+            }
+        }
+
+        if (isset($data['nickname'])) {
+            $user->nickname = $data['nickname'];
+        }
+
+        if (!empty($data['slug'])) {
+            $user->user_nicename = $data['slug'];
+        }
+
+        // URL
+        if (!empty($data['URL'])) {
+            $escaped = esc_url_raw($user->user_url);
+
+            if ($escaped !== $user->user_url) {
+                return new WP_Error('json_invalid_url', __('Invalid user URL.'), array('status' => 400));
+            }
+
+            $user->user_url = $data['URL'];
+        }
+
+        // Description
+        if (!empty($data['description'])) {
+            $user->description = $data['description'];
+        }
+
+        // Email
+        if (!empty($data['email'])) {
+            $user->user_email = $data['email'];
+        }
+
+        // Pre-flight check
+        $user = apply_filters('json_pre_insert_user', $user, $data);
+
+        if (is_wp_error($user)) {
+            return $user;
+        }
+
+        // Set Role to Berufsgruppe Auswahl - because of wpmu this must be done for a blog
+        if (!empty($data['professional'])) {
+            if (array_key_exists($data['professional'], $this->customroles)) {
+                if ($data['professional'] != 'administrator') {
+
+                    $user->role = $this->customroles[$data['professional']];
+                    //wp_update_user( $user );
+                    //if ( add_user_to_blog( '1', $user_id, $user->role ) ) {
+                    // return new WP_Error( 'insert_user', $user->role , array( 'status' => 403 ) );
+                    //} else {
+                    //return new WP_Error( 'insert_user', __('Failed to add USer ' ), array( 'status' => 403 ) );
+                    //}
+                    //	return new WP_Error( 'insert_user_role',  $this->customroles[$data['professional']] , array( 'status' => 403 ) );
+                }
+            }
+        }
+
+
+        // If Multisite is used
+        if (is_multisite()) {
+
+            // Add filter with higher priority --> does not work
+            //add_filter('wpmu_signup_user_notification', 'override_wpmu_signup_user_notification', 99);
+
+            remove_filter('bp_core_activate_account', 'bp_user_activate_field');
+            remove_filter('wpmu_signup_user_notification', 'complete_registratian_and_stuff', 1, 4);
+            add_filter('wpmu_signup_user_notification', '__return_false');
+
+
+            // Set User Role and Blogid in stdClass $user
+            $user->add_to_blog = $this->blogid;
+
+            // wpmu_signup_user needs an array, not an object
+            $user_data_array = json_decode(json_encode($user), true);
+            //wpmu_signup_user( $user->user_login, $user->user_email, $user_data_array );
+
+            wpmu_signup_user($user->user_login, $user->user_email, //$user_data_array
+                array(
+                    'add_to_blog' => $this->blogid,
+                    'new_role' => $user->role,
+                    'role' => $user->role
+                ));
+            switch_to_blog($this->blogid);
+            //add_filter( 'wpmu_signup_user_notification', '__return_false' );
+
+            $key = $wpdb->get_var($wpdb->prepare("SELECT activation_key FROM {$wpdb->signups} WHERE user_login = %s AND user_email = %s", $user->user_login, $user->user_email));
+
+            $ret = wpmu_activate_signup($key);
+
+            // New User should have been created and activated by now
+            $new_user = get_user_by('email', $user->user_email);
+            if (!$new_user) {
+                error_log('REPORT: insert_user 3: ' . $user->user_email);
+                return new WP_Error('insert_user', __('Benutzer konnte nicht angelegt werden'), array('status' => 403));
+            }
+
+            $user_id = $new_user->ID;
+
+            $user->ID = $user_id;
+            $updated_user = wp_update_user($user);
+            $oReturn['updated_user'] = $updated_user;
+
+            add_filter('wpmu_signup_user_notification', 'complete_registratian_and_stuff', 1, 4);
+            add_filter('bp_core_activate_account', 'bp_user_activate_field');
+            add_filter('wpmu_signup_user_notification', '__return_true');
+
+        } else {
+            // if no Multisite
+            $user_id = $update ? wp_update_user($user) : wp_insert_user($user);
+        }
+
+        if (is_wp_error($user_id)) {
+            return $user_id;
+        }
+
+        // Continue with Additional Data
+        // ToDO sync Buddypress Fields Vorname + Nachname
+        if (function_exists('xprofile_set_field_data')) {
+
+            // Debug
+            // $field_id = xprofile_get_field_id_from_name( 'Vorname');
+            // return new WP_Error( 'json_invalid_url_Xprofile','Vorname'. $field_id, array( 'status' => 400 ) );
+
+            // Sync Wordpress Names to BPs Xprofile
+            xprofile_set_field_data('Vorname', $user_id, $user->first_name);
+            xprofile_set_field_data('Nachname', $user_id, $user->last_name);
+
+            // Convert Birthday Date to useable Format
+            // Converted from <rcf3339>: "Y-m-d\TH:i:sP"  to: ??
+            //$this->set_format( '/^\d{4}-\d{1,2}-\d{1,2} 00:00:00$/', 'replace' ); // "Y-m-d 00:00:00"
+
+            if (isset($data['birthday'])) {
+                //$bdate = date('F j, Y', strtotime( $data['birthday']));
+                $bdate = date('Y-m-d H:i:s', strtotime($data['birthday']));
+                xprofile_set_field_data($this->xprofile_fields['birthday'], $user_id, $bdate);
+            }
+
+            // Store Additional Data into xProfile Fields if available
+            foreach ($this->additional_data as $arg) {
+                if (array_key_exists($arg, $this->xprofile_fields)) {
+
+                    // If no Data was submitted , set Field to false, --> TO RESEARCH
+                    if (empty($data[$arg])) {
+                        xprofile_set_field_data($this->xprofile_fields[$arg], $user_id, false);
+                    } else {
+                        //$value = maybe_serialize($data[ $arg ]);
+                        if ($arg == "professional") {
+                            if (is_array($data[$arg])) {
+                                $data[$arg] = $data[$arg][0];
+                            }
+                        }
+                        xprofile_set_field_data($this->xprofile_fields[$arg], $user_id, $data[$arg]);
+                    }
+
+                }
+            }
+        } // end xProfileFields
+
+        // Continue with Knews fields
+        if (isset($data['newsletters'])) {
+            //return $data['newsletters'];
+
+            $knews_user = new stdClass;
+            $easydoc_UserClass = new easydoc_Users;
+
+            $_array_newsletter_data = array();
+            foreach ($data['newsletters'] as $key => $value) {
+                $_array_newsletter_data[$value['id']] = $value['subscription'];
+            }
+            $knews_user->userid = $user->ID;
+            $knews_user->first_name = $user->first_name;
+            $knews_user->last_name = $user->last_name;
+            $knews_user->user_email = $user->user_email;
+            if (isset($data['titel'])) {
+                $knews_user->title = $data['titel'];
+            } else {
+                $knews_user->title = '';
+            }
+            if (isset($data['salutation'])) {
+                $knews_user->anrede = $data['salutation'];
+            } else {
+                $knews_user->anrede = '';
+            }
+            //return $_array_newsletter_data;
+
+            $knews_user->mailinglistids = $_array_newsletter_data;
+            $easydoc_UserClass->subscribe_to_knews($knews_user);
+        } //end knews
+
+        $user->ID = $user_id;
+        do_action('json_insert_user', $user, $data, $update);
+
+        $oReturn['user_id'] = $user_id;
+        return $user_id;
+    } // insert_user
+
+
+    // Generates a valid Username from two Strings
+    // Detects Umlaute and Sonderzeichen, removes them
+    // If a Valid Username cannot be generated, throws error
+    function generate_Username($firstname, $surename) {
+
+        $firstname = strip_tags(strtolower($firstname));
+        $surename = strip_tags(strtolower($surename));
+
+        $firstname = filter_var($firstname, FILTER_SANITIZE_STRING, FILTER_FLAG_STRIP_LOW | FILTER_FLAG_STRIP_HIGH);
+        $surename = filter_var($surename, FILTER_SANITIZE_STRING, FILTER_FLAG_STRIP_LOW | FILTER_FLAG_STRIP_HIGH);
+
+        $replacer = array(
+            'ä' => 'ae',
+            'à' => 'a',
+            'á' => 'a',
+            'â' => 'a',
+            'ã' => 'a',
+            'À' => 'a',
+            'Á' => 'a',
+            'Â' => 'a',
+            'Ã' => 'a',
+            'Ä' => 'a',
+            'Å' => 'a',
+            'å' => 'a',
+            'æ' => 'ae',
+            'ü' => 'ue',
+            'ù' => 'u',
+            'ú' => 'u',
+            'û' => 'u',
+            'Ù' => 'u',
+            'Ú' => 'u',
+            'Û' => 'u',
+            'Ü' => 'u',
+            'ö' => 'o',
+            'ò' => 'o',
+            'ó' => 'o',
+            'ô' => 'o',
+            'ß' => 'ss',
+            'è' => 'e',
+            'é' => 'e',
+            'ê' => 'e',
+            'ë' => 'e',
+            'È' => 'e',
+            'É' => 'e',
+            'Ê' => 'e',
+            'Ë' => 'e',
+            'Ç' => 'c',
+            'Ì' => 'l',
+            'Í' => 'l',
+            'Î' => 'l',
+            'Ï' => 'l',
+            'Ñ' => 'n',
+            'Ò' => 'o',
+            'Ó' => 'o',
+            'Ô' => 'o',
+            'Õ' => 'o',
+            'Ø' => '',
+            'ç' => '',
+            'ì' => '',
+            'í' => '',
+            'î' => '',
+            'ï' => '',
+            'ð' => 'o',
+            'ñ' => 'n',
+            'õ' => 'o',
+            'ø' => '',
+            'ý' => 'y',
+            'ÿ' => 'y',
+            '€' => 'e',
+            '-' => '',
+            ' ' => '',
+            '_' => '',
+        );
+        foreach ($replacer as $tobereplaced => $toreplace) {
+            $umlaute[] = $tobereplaced;
+            $alias[] = $toreplace;
+        }
+
+        $firstname = str_replace($umlaute, $alias, $firstname);
+        $firstname = preg_replace('/[^a-zA-Z0-9_ \-]/s', '', $firstname);
+
+        $surename = str_replace($umlaute, $alias, $surename);
+        $surename = preg_replace('/[^a-zA-Z0-9_ \-]/s', '', $surename);
+
+        $username = $firstname . $surename;
+
+        error_log('REPORT: generate_Username() 1 : ' . $username);
+
+        $username_check = bp_core_validate_user_signup($username, 'dummy@shouldnotexistlolrofl.com');
+
+        if (empty($username_check['errors']->errors['user_name'])) {
+            return $username;
+        } // if username exists, add random numbers
+        else {
+            $rand_nr = rand(0, 9) . rand(0, 9) . rand(0, 9);
+            $username = $username . $rand_nr;
+            $username_check = bp_core_validate_user_signup($username, 'dummy@shouldnotexistlolrofl.com');
+            if (empty($username_check['errors']->errors['user_name'])) {
+                return $username;
+            } else {
+                error_log('REPORT: generate_Username() 2: ' . $username);
+                return new WP_Error('json_username', __('Der Benutzername ist schon in Verwendung.'), array('status' => 403));
+            }
+        }
+    } // generate_Username
+
+
+    /**
+     * Delete a user, used for Testing only!
+     *
+     * @param int $id
+     * @param bool force
+     * @return true on success
+     */
+    public function delete_user($id, $force = false, $reassign = null) {
+        $id = absint($id);
+
+        if (empty($id)) {
+            return new WP_Error('json_user_invalid_id', __('Ungültige Benutzer ID.'), array('status' => 400));
+        }
+
+        // Permissions check
+        if (!current_user_can('delete_user', $id)) {
+            error_log('REPORT: delete_user');
+            return new WP_Error('json_user_cannot_delete', __('Sorry, you are not allowed to delete this user.'), array('status' => 403));
+        }
+
+        $user = get_userdata($id);
+
+        if (!$user) {
+            return new WP_Error('json_user_invalid_id', __('Invalid user ID.'), array('status' => 400));
+        }
+
+        if (!empty($reassign)) {
+            $reassign = absint($reassign);
+
+            // Check that reassign is valid
+            if (empty($reassign) || $reassign === $id || !get_userdata($reassign)) {
+                return new WP_Error('json_user_invalid_reassign', __('Invalid user ID.'), array('status' => 400));
+            }
+        } else {
+            $reassign = null;
+        }
+
+        if (is_multisite()) {
+            $result_wpmu = wpmu_delete_user($id);
+        } else {
+            $result = wp_delete_user($id, $reassign);
+        }
+
+        $user = get_user_by('id', $id);
+
+        if (!$user) {
+            return array('message' => __('Deleted user'));
+        } else if (!$result) {
+            return new WP_Error('json_cannot_delete', __('The user cannot be deleted.'), array('status' => 500));
+        }
+    } // delete_user
+
+    /**
+     * Reset Password and send E-Mail
+     *
+     * @param
+     * @return response
+     */
+    public static function reset_pwd($email) {
+        global $wpdb, $wp_hasher;
+
+        if (empty($email)) {
+            error_log('REPORT: reset_pwd 1');
+            return new WP_Error('json_reset_pwd', __('Enter an E-mail address.'), array('status' => 403));
+        }
+
+        if (!strpos($email, '@')) {
+            error_log('REPORT: reset_pwd 2');
+            return new WP_Error('json_reset_pwd', __('Enter an e-mail address.'), array('status' => 403));
+        }
+
+        $user_data = get_user_by('email', trim($email));
+
+        if (empty($user_data)) {
+            error_log('REPORT: reset_pwd 3');
+            return new WP_Error('json_reset_pwd', __('Kein Benutzer mit dieser E-Mail Adresse gefunden.'), array('status' => 403));
+        }
+
+        // redefining user_login ensures we return the right case in the email
+        $user_login = $user_data->user_login;
+        $user_email = $user_data->user_email;
+
+        $allow = apply_filters('allow_password_reset', true, $user_data->ID);
+        if (!$allow) {
+            return new WP_Error('no_password_reset', __('Password reset is not allowed for this user'));
+        } else if (is_wp_error($allow)) {
+            return $allow;
+        }
+        // Generate something random for a password reset key.
+
+        $key = wp_generate_password(20, false);
+
+        /**
+         * Fires when a password reset key is generated.
+         *
+         * @param string $user_login The username for the user.
+         * @param string $key The generated password reset key.
+         * @since 2.5.0
+         *
+         */
+        do_action('retrieve_password_key', $user_login, $key);
+
+        // Now insert the key, hashed, into the DB.
+        if (empty($wp_hasher)) {
+            require_once ABSPATH . WPINC . '/class-phpass.php';
+            $wp_hasher = new PasswordHash(8, true);
+        }
+        $hashed = $wp_hasher->HashPassword($key);
+        $wpdb->update($wpdb->users, array('user_activation_key' => $hashed), array('user_login' => $user_login));
+
+        $message = __('Someone requested that the password be reset for the following account:') . "\r\n\r\n";
+        $message .= network_home_url('/') . "\r\n\r\n";
+        $message .= sprintf(__('Username: %s'), $user_login) . "\r\n\r\n";
+        $message .= __('If this was a mistake, just ignore this email and nothing will happen.') . "\r\n\r\n";
+        $message .= __('To reset your password, visit the following address:') . "\r\n\r\n";
+        $message .= '<' . network_site_url("wp-login.php?action=rp&key=$key&login=" . rawurlencode($user_login), 'login') . ">\r\n";
+
+        if (is_multisite())
+            $blogname = $GLOBALS['current_site']->site_name; else
+            /*
+             * The blogname option is escaped with esc_html on the way into the database
+             * in sanitize_option we want to reverse this for the plain text arena of emails.
+             */ $blogname = wp_specialchars_decode(get_option('blogname'), ENT_QUOTES);
+
+        $title = sprintf(__('[%s] Password Reset'), $blogname);
+
+        /**
+         * Filter the subject of the password reset email.
+         *
+         * @param string $title Default email title.
+         * @since 2.8.0
+         *
+         */
+        $title = apply_filters('retrieve_password_title', $title);
+        /**
+         * Filter the message body of the password reset mail.
+         *
+         * @param string $message Default mail message.
+         * @param string $key The activation key.
+         * @since 2.8.0
+         *
+         */
+        $message = apply_filters('retrieve_password_message', $message, $key);
+
+        if ($message && !wp_mail($user_email, wp_specialchars_decode($title), $message))
+            wp_die(__('The e-mail could not be sent.') . "<br />\n" . __('Possible reason: your host may have disabled the mail() function.'));
+    } // reset_pwd
+
+}
+
+?>
